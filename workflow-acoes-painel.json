@@ -57,26 +57,6 @@
             {
               "value1": "={{$json.body.action}}",
               "value2": "toggle_flow_status"
-            },
-            {
-              "value1": "={{$json.body.action}}",
-              "value2": "update_gemini_key"
-            },
-            {
-              "value1": "={{$json.body.action}}",
-              "value2": "clear_logs"
-            },
-            {
-              "value1": "={{$json.body.action}}",
-              "value2": "disconnect_instance"
-            },
-            {
-              "value1": "={{$json.body.action}}",
-              "value2": "check_on_whatsapp"
-            },
-            {
-              "value1": "={{$json.body.action}}",
-              "value2": "reset_memory_for_lead"
             }
           ]
         }
@@ -92,7 +72,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE agent_config \\nSET \\n  \"waitTime\" = COALESCE({{$json.body.data.waitTime ?? 'NULL'}}, \"waitTime\"),\\n  \"notificationTrigger\" = COALESCE('{{$json.body.data.notificationTrigger}}', \"notificationTrigger\"),\\n  \"notificationNumbers\" = COALESCE('{{$json.body.data.notificationNumbers}}', \"notificationNumbers\"),\\n  \"debug_mode\" = COALESCE({{$json.body.data.debug_mode ?? 'NULL'}}, \"debug_mode\")\\nWHERE id = 1;"
+        "query": "UPDATE agent_config \\nSET \\n  \"waitTime\" = {{$json.body.data.waitTime}},\\n  \"notificationTrigger\" = '{{$json.body.data.notificationTrigger}}',\\n  \"notificationNumbers\" = '{{$json.body.data.notificationNumbers}}'\\nWHERE id = 1;"
       },
       "name": "DB: Update Settings",
       "type": "n8n-nodes-base.postgres",
@@ -347,7 +327,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO agents (id, name, description, prompt, is_default, is_active, available_tools, sort_order)\\nVALUES ({{$json.id}}, '{{$json.name.replace(/'/g, \"''\")}}', '{{$json.description.replace(/'/g, \"''\")}}', '{{$json.prompt.replace(/'/g, \"''\")}}', {{$json.is_default}}, {{$json.is_active}}, '{{JSON.stringify($json.available_tools || [])}}'::jsonb, {{$json.sort_order}})\\nON CONFLICT (id) DO UPDATE\\nSET name = EXCLUDED.name,\\n    description = EXCLUDED.description,\\n    prompt = EXCLUDED.prompt,\\n    is_default = EXCLUDED.is_default,\\n    is_active = EXCLUDED.is_active,\\n    available_tools = EXCLUDED.available_tools,\\n    sort_order = EXCLUDED.sort_order;"
+        "query": "INSERT INTO agents (id, name, description, prompt, is_default, is_active, available_tools, sort_order, enable_follow_up)\\nVALUES ({{$json.id}}, '{{$json.name.replace(/'/g, \"''\")}}', '{{$json.description.replace(/'/g, \"''\")}}', '{{$json.prompt.replace(/'/g, \"''\")}}', {{$json.is_default}}, {{$json.is_active}}, '{{JSON.stringify($json.available_tools || [])}}'::jsonb, {{$json.sort_order}}, {{$json.enable_follow_up}})\\nON CONFLICT (id) DO UPDATE\\nSET name = EXCLUDED.name,\\n    description = EXCLUDED.description,\\n    prompt = EXCLUDED.prompt,\\n    is_default = EXCLUDED.is_default,\\n    is_active = EXCLUDED.is_active,\\n    available_tools = EXCLUDED.available_tools,\\n    sort_order = EXCLUDED.sort_order,\\n    enable_follow_up = EXCLUDED.enable_follow_up;"
       },
       "name": "DB: Upsert Agent",
       "type": "n8n-nodes-base.postgres",
@@ -366,7 +346,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO agents (name, description, prompt, is_default, is_active, available_tools, sort_order)\\nVALUES ('{{$json.name.replace(/'/g, \"''\")}}', '{{$json.description.replace(/'/g, \"''\")}}', '{{$json.prompt.replace(/'/g, \"''\")}}', {{$json.is_default}}, {{$json.is_active}}, '{{JSON.stringify($json.available_tools || [])}}'::jsonb, {{$json.sort_order}});"
+        "query": "INSERT INTO agents (name, description, prompt, is_default, is_active, available_tools, sort_order, enable_follow_up)\\nVALUES ('{{$json.name.replace(/'/g, \"''\")}}', '{{$json.description.replace(/'/g, \"''\")}}', '{{$json.prompt.replace(/'/g, \"''\")}}', {{$json.is_default}}, {{$json.is_active}}, '{{JSON.stringify($json.available_tools || [])}}'::jsonb, {{$json.sort_order}}, {{$json.enable_follow_up}});"
       },
       "name": "DB: Create New Agent",
       "type": "n8n-nodes-base.postgres",
@@ -401,127 +381,6 @@
         1320,
         -120
       ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "UPDATE agent_config SET gemini_api_key = '{{$json.body.data.apiKey}}' WHERE id = 1;"
-      },
-      "name": "DB: Update Gemini Key",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [
-        920,
-        1000
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "YOUR_DB_CREDENTIALS_ID",
-          "name": "Postgres credentials"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "TRUNCATE TABLE agent_logs;"
-      },
-      "name": "DB: Clear Logs",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [
-        920,
-        1160
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "YOUR_DB_CREDENTIALS_ID",
-          "name": "Postgres credentials"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{$env.BAILEYS_API_URL}}/instance/logout",
-        "authentication": "headerAuth",
-        "options": {}
-      },
-      "name": "Baileys: Disconnect",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        920,
-        1320
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "YOUR_BAILEYS_API_KEY_ID",
-          "name": "Baileys API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{$env.BAILEYS_API_URL}}/chat/on-whatsapp",
-        "authentication": "headerAuth",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "number",
-              "value": "={{$json.body.data.number}}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "name": "Baileys: Check on WhatsApp",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        920,
-        1480
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "YOUR_BAILEYS_API_KEY_ID",
-          "name": "Baileys API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const result = $json.data; \\nconst onWhatsApp = result?.exists === true;\\nconst number = $node[\"Webhook (POST)\"].json.body.data.number;\\n\\nreturn { onWhatsApp, number };"
-      },
-      "name": "Format WhatsApp Check Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1120,
-        1480
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "DELETE FROM conversation_history WHERE lead_id = '{{$json.body.data.leadId}}';"
-      },
-      "name": "DB: Reset Memory for Lead",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [
-        920,
-        1640
-      ],
-      "notes": "Limpa o histórico de conversas para um lead específico. Conecte às suas credenciais do Supabase/Postgres.",
-      "credentials": {
-        "postgres": {
-          "id": "YOUR_DB_CREDENTIALS_ID",
-          "name": "Postgres credentials"
-        }
-      }
     }
   ],
   "connections": {
@@ -583,41 +442,6 @@
         [
           {
             "node": "DB: Toggle Agent Status",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "DB: Update Gemini Key",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "DB: Clear Logs",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Baileys: Disconnect",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Baileys: Check on WhatsApp",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "DB: Reset Memory for Lead",
             "type": "main",
             "index": 0
           }
@@ -861,117 +685,6 @@
         [
           {
             "node": "DB: Create New Agent",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "DB: Update Gemini Key": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "DB: Clear Logs": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Baileys: Disconnect": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Baileys: Check on WhatsApp": {
-      "main": [
-        [
-          {
-            "node": "Format WhatsApp Check Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Format WhatsApp Check Response": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "DB: Reset Memory for Lead": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Error Response",
             "type": "main",
             "index": 0
           }

@@ -1,14 +1,10 @@
 import React from 'react';
-import { User } from '../types';
-import { UserCircleIcon } from './icons/Icons';
 
 interface HeaderProps {
   workflowName: string;
   isFlowActive: boolean;
   onToggleFlow: () => void;
   isWhatsAppConnected: boolean;
-  user: User | null;
-  onNavigateToSettings: () => void;
 }
 
 const StatusIndicator: React.FC<{ label: string; active: boolean; children?: React.ReactNode }> = ({ label, active, children }) => {
@@ -26,7 +22,7 @@ const StatusIndicator: React.FC<{ label: string; active: boolean; children?: Rea
   );
 };
 
-const Header: React.FC<HeaderProps> = ({ workflowName, isFlowActive, onToggleFlow, isWhatsAppConnected, user, onNavigateToSettings }) => {
+const Header: React.FC<HeaderProps> = ({ workflowName, isFlowActive, onToggleFlow, isWhatsAppConnected }) => {
   return (
     <header className="bg-surface p-4 sm:p-6 border-b border-surface-bright">
       <div className="flex items-center justify-between">
@@ -46,14 +42,6 @@ const Header: React.FC<HeaderProps> = ({ workflowName, isFlowActive, onToggleFlo
           <StatusIndicator label="WhatsApp" active={isWhatsAppConnected}>
             {isWhatsAppConnected ? 'Connected' : 'Disconnected'}
           </StatusIndicator>
-
-          <button onClick={onNavigateToSettings} className="text-text-secondary hover:text-text-primary transition-colors" title="Ver Perfil e Configurações">
-            {user ? (
-              <img src={user.photoUrl} alt={user.name} className="w-8 h-8 rounded-full" />
-            ) : (
-              <UserCircleIcon className="w-8 h-8" />
-            )}
-          </button>
         </div>
       </div>
       <style>{`

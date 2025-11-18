@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { View, AgentConfig, FollowUpCadence, InstanceState, DashboardData, ToastMessage, Agent, User, LogEntry, ModalState } from './types';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { View, AgentConfig, FollowUpCadence, InstanceState, DashboardData, ToastMessage, Agent, Phase, Lead } from './types';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import Agents from './components/Agents';
@@ -7,8 +7,11 @@ import Settings from './components/Settings';
 import FollowUp from './components/FollowUp';
 import Instance from './components/Instance';
 import Toast from './components/Toast';
-import Logs from './components/Logs';
-import Modal from './components/Modal';
+import Roadmap from './components/Roadmap';
+import Leads from './components/Leads';
+import { roadmapData } from './roadmapData';
+import { mockLeads } from './mockData';
+
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('dashboard');
@@ -22,16 +25,15 @@ const App: React.FC = () => {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [user, setUser] = useState<User | null>(null);
+  const [phases, setPhases] = useState<Phase[]>(roadmapData);
+  const [leads, setLeads] = useState<Lead[]>(mockLeads);
+
 
   const [agentConfig, setAgentConfig] = useState<AgentConfig>({
     waitTime: 10,
     notificationTrigger: "",
     notificationNumbers: "",
     is_active: true,
-    geminiApiKey: "",
-    debug_mode: false,
   });
 
   const [followUpCadences, setFollowUpCadences] = useState<FollowUpCadence[]>([]);
@@ -49,72 +51,17 @@ const App: React.FC = () => {
       ticketMedio: 0,
       taxaConversao: 0
     },
-    leadsPorDia: []
+    leadsPorDia: [],
+    leadDetails: {
+        compras: [],
+        leads: [],
+    }
   });
-
-  const [modalState, setModalState] = useState<ModalState>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {},
-  });
-
-  const showConfirmationModal = (config: Omit<ModalState, 'isOpen' | 'onConfirm'> & { onConfirm: () => Promise<void> | void }) => {
-    setModalState({ ...config, isOpen: true });
-  };
   
   const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
       setToast({ message, type });
       setTimeout(() => setToast(null), 3000);
   };
-
-  useEffect(() => {
-    // Mock AI Studio SDK for demonstration
-    if (typeof (window as any).aistudio === 'undefined') {
-      (window as any).aistudio = {};
-    }
-    if (typeof (window as any).aistudio.auth === 'undefined') {
-      const mockUser = {
-        name: 'Usuário Exemplo',
-        email: 'usuario@exemplo.com',
-        photoUrl: `https://ui-avatars.com/api/?name=Usuário+Exemplo&background=E53935&color=fff`,
-      };
-      let signedIn = JSON.parse(localStorage.getItem('aistudio_signedin') || 'false');
-      let authCallback: ((user: any | null) => void) | null = null;
-
-      (window as any).aistudio.auth = {
-        onAuthStateChanged: (callback: (user: User | null) => void) => {
-          authCallback = callback;
-          callback(signedIn ? mockUser : null);
-          return () => { authCallback = null; };
-        },
-        signIn: async () => {
-          signedIn = true;
-          localStorage.setItem('aistudio_signedin', 'true');
-          if (authCallback) authCallback(mockUser);
-          return mockUser;
-        },
-        signOut: async () => {
-          signedIn = false;
-          localStorage.setItem('aistudio_signedin', 'false');
-          if (authCallback) authCallback(null);
-        }
-      };
-    }
-     if (typeof (window as any).aistudio.keys === 'undefined') {
-        (window as any).aistudio.keys = {
-            create: async (type: string) => {
-                if (type === 'gemini') {
-                    return `mock-gemini-api-key-${Date.now()}`;
-                }
-                return null;
-            }
-        }
-    }
-
-    const unsubscribe = (window as any).aistudio.auth.onAuthStateChanged(setUser);
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     const savedLoadUrl = localStorage.getItem('n8nLoadUrl') || '';
@@ -156,9 +103,9 @@ const App: React.FC = () => {
       
       if(data.agentConfig) setAgentConfig(data.agentConfig);
       if(data.agents) setAgents(data.agents);
+      if(data.leads) setLeads(data.leads);
       if(data.followUpCadences) setFollowUpCadences(data.followUpCadences);
       if(data.dashboardData) setDashboardData(data.dashboardData);
-      if(data.logs) setLogs(data.logs);
       if(data.isWhatsAppConnected !== undefined) {
           setInstanceState(prev => ({ ...prev, isWhatsAppConnected: data.isWhatsAppConnected }));
       }
@@ -207,7 +154,8 @@ const App: React.FC = () => {
         return;
     }
     const action = 'update_settings';
-    setIsSaving(true);
+    console.log(`POST to N8N Webhook: ${action}`, newConfig);
+
     try {
       const response = await fetch(n8nUrls.actions, {
         method: 'POST',
@@ -221,32 +169,6 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Error updating agent config:', error);
       showToast('Erro ao atualizar configurações.', 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  }, [n8nUrls.actions]);
-  
-  const handleUpdateGeminiKey = useCallback(async (apiKey: string): Promise<void> => {
-    if (!n8nUrls.actions) {
-        showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
-        return;
-    }
-     setIsSaving(true);
-     try {
-      const response = await fetch(n8nUrls.actions, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_gemini_key', data: { apiKey } }),
-      });
-      if (!response.ok) throw new Error('Failed to update Gemini API Key');
-      
-      setAgentConfig(prev => ({...prev, geminiApiKey: apiKey }));
-      showToast('Chave de API do Gemini atualizada com sucesso!');
-    } catch (error) {
-      console.error('Error updating Gemini Key:', error);
-      showToast('Erro ao atualizar a chave de API do Gemini.', 'error');
-    } finally {
-        setIsSaving(false);
     }
   }, [n8nUrls.actions]);
 
@@ -255,7 +177,7 @@ const App: React.FC = () => {
         showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
         return;
     }
-     setIsSaving(true);
+    setIsSaving(true);
      try {
       const response = await fetch(n8nUrls.actions, {
         method: 'POST',
@@ -270,88 +192,30 @@ const App: React.FC = () => {
       console.error('Error updating agents:', error);
       showToast('Erro ao atualizar agentes.', 'error');
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   }, [n8nUrls.actions]);
 
   const handleResetMemory = useCallback(async () => {
-    showConfirmationModal({
-      title: 'Resetar Memória Global?',
-      message: 'Esta ação apagará todo o histórico de conversas de todos os agentes. É uma ação irreversível. Deseja continuar?',
-      confirmText: 'Sim, Resetar Tudo',
-      isDanger: true,
-      onConfirm: async () => {
-        if (!n8nUrls.actions) {
-          showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
-          return;
-        }
-        try {
-          await fetch(n8nUrls.actions, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'reset_memory' }),
-          });
-          showToast('Memória global resetada!', 'success');
-        } catch (error) {
-          console.error('Error resetting memory:', error);
-          showToast('Erro ao resetar memória.', 'error');
-        }
-      }
-    });
-  }, [n8nUrls.actions]);
-
-    const handleResetMemoryForLead = useCallback(async (leadId: string) => {
-    showConfirmationModal({
-      title: `Resetar Memória do Lead ${leadId}?`,
-      message: 'Esta ação apagará o histórico de conversa apenas para este lead específico. Deseja continuar?',
-      confirmText: 'Sim, Resetar',
-      isDanger: true,
-      onConfirm: async () => {
-        if (!n8nUrls.actions) {
-          showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
-          return;
-        }
-        try {
-          await fetch(n8nUrls.actions, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'reset_memory_for_lead', data: { leadId } }),
-          });
-          showToast(`Memória do lead ${leadId} resetada!`, 'success');
-        } catch (error) {
-          console.error('Error resetting memory for lead:', error);
-          showToast('Erro ao resetar memória do lead.', 'error');
-        }
-      }
-    });
-  }, [n8nUrls.actions]);
-
-  const handleClearLogs = useCallback(async () => {
-    showConfirmationModal({
-        title: 'Limpar Todos os Logs?',
-        message: 'Esta ação é irreversível e removerá todos os registros de logs do sistema. Deseja continuar?',
-        confirmText: 'Sim, Limpar Logs',
-        isDanger: true,
-        onConfirm: async () => {
-            if (!n8nUrls.actions) {
-                showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
-                return;
-            }
-            try {
-                const response = await fetch(n8nUrls.actions, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'clear_logs' }),
-                });
-                if (!response.ok) throw new Error('Failed to clear logs');
-                setLogs([]);
-                showToast('Logs limpos com sucesso!');
-            } catch (error) {
-                console.error('Error clearing logs:', error);
-                showToast('Erro ao limpar os logs.', 'error');
-            }
-        }
-    });
+    if (!n8nUrls.actions) {
+        showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
+        return;
+    }
+    console.log('POST to N8N Webhook: Resetting Agent Memory');
+    setIsSaving(true);
+    try {
+        await fetch(n8nUrls.actions, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reset_memory' }),
+        });
+      showToast('Memória resetada!', 'success');
+    } catch(error) {
+       console.error('Error resetting memory:', error);
+       showToast('Erro ao resetar memória.', 'error');
+    } finally {
+        setIsSaving(false);
+    }
   }, [n8nUrls.actions]);
   
   const handleToggleFlow = useCallback(async () => {
@@ -379,6 +243,7 @@ const App: React.FC = () => {
         showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
         return;
     }
+    console.log('POST to N8N Webhook: Updating Follow-up Cadences', newCadences);
     setIsSaving(true);
     try {
         const response = await fetch(n8nUrls.actions, {
@@ -443,6 +308,7 @@ const App: React.FC = () => {
         if (!response.ok) throw new Error('Failed to check status');
         const result = await response.json();
         setInstanceState(prev => ({ ...prev, isWhatsAppConnected: result.connected }));
+        showToast(`Status da conexão: ${result.connected ? 'Conectado' : 'Desconectado'}`);
     } catch (error) {
         console.error('Error checking status:', error);
         showToast('Erro ao verificar status da conexão.', 'error');
@@ -450,57 +316,93 @@ const App: React.FC = () => {
     }
   }, [n8nUrls.actions]);
 
-  const handleDisconnectInstance = useCallback(async () => {
-    if (!n8nUrls.actions) {
-        showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
-        return;
-    }
-    try {
-        const response = await fetch(n8nUrls.actions, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'disconnect_instance' }),
-        });
-        if (!response.ok) throw new Error('Failed to disconnect');
-        setInstanceState(prev => ({ ...prev, isWhatsAppConnected: false }));
-        showToast('Instância desconectada com sucesso.');
-    } catch (error) {
-        console.error('Error disconnecting instance:', error);
-        showToast('Erro ao desconectar instância.', 'error');
-        setInstanceState(prev => ({ ...prev, isWhatsAppConnected: false }));
-    }
-  }, [n8nUrls.actions]);
+  // Roadmap handlers
+  const handleTogglePhase = (phaseId: string) => {
+    setPhases(
+      phases.map(p =>
+        p.id === phaseId ? { ...p, isExpanded: !p.isExpanded } : p
+      )
+    );
+  };
+  
+  const handleToggleTask = (taskId: string) => {
+    setPhases(phases.map(phase => ({
+      ...phase,
+      categories: phase.categories.map(category => ({
+        ...category,
+        tasks: category.tasks.map(task => {
+          if (task.id === taskId) {
+            const newCompleted = !task.completed;
+            return {
+              ...task,
+              completed: newCompleted,
+              subTasks: task.subTasks.map(sub => ({ ...sub, completed: newCompleted }))
+            };
+          }
+          return task;
+        })
+      }))
+    })));
+  };
 
-  const handleCheckNumberOnWhatsApp = useCallback(async (number: string): Promise<{ onWhatsApp: boolean; number: string } | null> => {
-    if (!n8nUrls.actions) {
-        showToast('Por favor, configure a URL de Ações do N8N.', 'warning');
-        return null;
-    }
-    try {
-        const response = await fetch(n8nUrls.actions, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'check_on_whatsapp', data: { number } }),
+  const handleToggleSubTask = (subTaskId: string) => {
+     setPhases(phases.map(phase => ({
+      ...phase,
+      categories: phase.categories.map(category => ({
+        ...category,
+        tasks: category.tasks.map(task => {
+          const subTaskIndex = task.subTasks.findIndex(st => st.id === subTaskId);
+          if (subTaskIndex > -1) {
+            const newSubTasks = task.subTasks.map(sub => 
+              sub.id === subTaskId ? { ...sub, completed: !sub.completed } : sub
+            );
+            const allSubTasksCompleted = newSubTasks.every(st => st.completed);
+            return { ...task, subTasks: newSubTasks, completed: allSubTasksCompleted };
+          }
+          return task;
+        })
+      }))
+    })));
+  };
+  
+  const progress = useMemo(() => {
+    let totalTasks = 0;
+    let completedTasks = 0;
+    phases.forEach(phase => {
+        phase.categories.forEach(category => {
+            category.tasks.forEach(task => {
+                task.subTasks.forEach(() => {
+                    totalTasks++;
+                });
+            });
         });
-        if (!response.ok) throw new Error('Failed to check number');
-        const result = await response.json();
-        return result;
-    } catch (error) {
-        console.error('Error checking number:', error);
-        showToast('Erro ao verificar número.', 'error');
-        return null;
-    }
-  }, [n8nUrls.actions]);
+    });
+
+    phases.forEach(phase => {
+        phase.categories.forEach(category => {
+            category.tasks.forEach(task => {
+                task.subTasks.forEach(subTask => {
+                    if (subTask.completed) {
+                        completedTasks++;
+                    }
+                });
+            });
+        });
+    });
+
+    return totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  }, [phases]);
 
 
   const renderView = () => {
-    if (isLoading && !user) { // Also wait for user auth check
+    if (isLoading) {
       return <div className="text-center p-10 text-text-secondary">Carregando dados...</div>;
     }
     
     const dashboardComponent = (
         <Dashboard 
             data={dashboardData} 
+            agents={agents}
             onRefresh={() => fetchData(dashboardRange, false)} 
             isRefreshing={isRefreshing}
             range={dashboardRange}
@@ -510,37 +412,28 @@ const App: React.FC = () => {
 
     switch(view) {
       case 'agents':
-        return <Agents 
-                    agents={agents} 
-                    onUpdate={handleUpdateAgents} 
-                    onResetMemory={handleResetMemory} 
-                    onResetMemoryForLead={handleResetMemoryForLead}
-                    isSaving={isSaving}
-                    showConfirmationModal={showConfirmationModal}
-                />;
+        return <Agents agents={agents} onUpdate={handleUpdateAgents} onResetMemory={handleResetMemory} isSaving={isSaving} />;
+      case 'leads':
+        return <Leads leads={leads} agents={agents} />;
       case 'settings':
         return <Settings 
                     config={agentConfig} 
                     onUpdate={handleUpdateAgentConfig} 
                     n8nUrls={n8nUrls}
                     onUpdateN8nUrls={handleUpdateN8nUrls}
-                    user={user}
-                    onUpdateGeminiKey={handleUpdateGeminiKey}
-                    showToast={showToast}
-                    isSaving={isSaving}
                 />;
       case 'follow-up':
         return <FollowUp cadences={followUpCadences} onUpdate={handleUpdateCadences} isSaving={isSaving} />;
       case 'instance':
-        return <Instance 
-                    instanceState={instanceState} 
-                    onGenerateQRCode={handleGenerateQRCode} 
-                    onCheckStatus={handleCheckStatus} 
-                    onDisconnect={handleDisconnectInstance}
-                    onCheckNumber={handleCheckNumberOnWhatsApp}
+        return <Instance instanceState={instanceState} onGenerateQRCode={handleGenerateQRCode} onCheckStatus={handleCheckStatus} />;
+      case 'roadmap':
+        return <Roadmap
+                    phases={phases}
+                    progress={progress}
+                    onTogglePhase={handleTogglePhase}
+                    onToggleTask={handleToggleTask}
+                    onToggleSubTask={handleToggleSubTask}
                 />;
-      case 'logs':
-        return <Logs logs={logs} agents={agents} onClearLogs={handleClearLogs} isLoading={isLoading}/>;
       case 'dashboard':
         return dashboardComponent;
       default:
@@ -550,22 +443,19 @@ const App: React.FC = () => {
   
   const navItems = [
       { view: 'dashboard' as View, label: 'Dashboard' },
+      { view: 'leads' as View, label: 'Leads' },
       { view: 'agents' as View, label: 'Agentes' },
-      { view: 'settings' as View, label: 'Configurações' },
+      { view: 'roadmap' as View, label: 'Roadmap' },
       { view: 'follow-up' as View, label: 'Follow-up' },
       { view: 'instance' as View, label: 'Instância' },
-      { view: 'logs' as View, label: 'Logs' },
+      { view: 'settings' as View, label: 'Configurações' },
   ];
 
   return (
     <div className="min-h-screen bg-background font-sans p-4 sm:p-6 lg:p-8">
-      <Modal 
-        {...modalState}
-        onClose={() => setModalState(prev => ({ ...prev, isOpen: false }))}
-      />
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="max-w-7xl mx-auto bg-surface rounded-lg shadow-xl overflow-hidden">
-        {showUrlWarning && !user && (
+        {showUrlWarning && (
           <div className="bg-warning/20 text-warning text-center p-3 text-sm border-b-2 border-warning">
             <strong>Atenção:</strong> As URLs de Webhook do N8N não estão configuradas. Por favor, vá para a aba <strong>'Configurações'</strong> para adicioná-las.
           </div>
@@ -575,11 +465,9 @@ const App: React.FC = () => {
           isFlowActive={agentConfig.is_active}
           onToggleFlow={handleToggleFlow}
           isWhatsAppConnected={instanceState.isWhatsAppConnected}
-          user={user}
-          onNavigateToSettings={() => setView('settings')}
         />
-        <nav className="border-b border-surface-bright px-4">
-          <div className="flex items-center space-x-4">
+        <nav className="border-b border-surface-bright px-4 overflow-x-auto">
+          <div className="flex items-center space-x-1 sm:space-x-4 whitespace-nowrap">
             {navItems.map(item => (
               <NavItem key={item.view} view={item.view} label={item.label} currentView={view} setView={setView} />
             ))}
@@ -598,7 +486,7 @@ const NavItem: React.FC<{ view: View; currentView: View; setView: (view: View) =
   return (
     <button
       onClick={() => setView(view)}
-      className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
+      className={`px-3 py-3 text-sm font-medium transition-colors duration-200 ${
         isActive
           ? 'text-primary border-b-2 border-primary'
           : 'text-text-secondary hover:text-text-primary'

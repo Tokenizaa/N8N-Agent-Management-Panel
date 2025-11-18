@@ -1,4 +1,4 @@
-export type View = 'agents' | 'settings' | 'follow-up' | 'instance' | 'dashboard' | 'toast' | 'logs';
+export type View = 'agents' | 'settings' | 'follow-up' | 'instance' | 'dashboard' | 'toast' | 'roadmap' | 'leads';
 
 export interface Agent {
   id: number;
@@ -9,6 +9,8 @@ export interface Agent {
   is_active: boolean;
   available_tools?: number[];
   sort_order: number;
+  enable_follow_up: boolean;
+  status?: 'online' | 'busy' | 'offline';
 }
 
 export interface AgentConfig {
@@ -16,8 +18,6 @@ export interface AgentConfig {
   notificationTrigger: string;
   notificationNumbers: string;
   is_active: boolean;
-  geminiApiKey?: string;
-  debug_mode: boolean;
 }
 
 export interface FollowUpCadence {
@@ -34,6 +34,28 @@ export interface InstanceState {
   isWhatsAppConnected: boolean;
 }
 
+export interface LeadDetail {
+  id: string;
+  name: string;
+  value: number;
+  date: string;
+  agent: string;
+}
+
+export interface Lead {
+  id: string;
+  name: string;
+  phone: string;
+  lastAgent: string;
+  status: string;
+  sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';
+  lastContact: string;
+  value: number;
+  customAttributes: { [key: string]: string };
+  history: { type: 'incoming' | 'outgoing' | 'note'; content: string; timestamp: string; agent?: string }[];
+}
+
+
 export interface DashboardData {
   kpis: {
     totalLeads: number;
@@ -43,6 +65,10 @@ export interface DashboardData {
     taxaConversao: number;
   };
   leadsPorDia: { name: string; leads: number; }[];
+  leadDetails?: {
+      compras: LeadDetail[];
+      leads: LeadDetail[];
+  }
 }
 
 export interface ToastMessage {
@@ -50,26 +76,37 @@ export interface ToastMessage {
     type: 'success' | 'error' | 'warning';
 }
 
-export interface User {
-  name: string;
-  email: string;
-  photoUrl: string;
-}
-
-export interface LogEntry {
-  id: number;
+export interface ConnectionLog {
   timestamp: string;
-  agent_name: string;
-  level: 'INFO' | 'DEBUG' | 'ERROR' | 'WARNING';
+  status: 'connected' | 'disconnected' | 'error';
   message: string;
-  details?: Record<string, any> | string;
 }
 
-export interface ModalState {
-  isOpen: boolean;
+// Roadmap Types
+export interface SubTask {
+  id: string;
+  text: string;
+  completed: boolean;
+  icon?: 'database' | 'workflow' | 'code';
+}
+
+export interface Task {
+  id: string;
+  text: string;
+  completed: boolean;
+  subTasks: SubTask[];
+}
+
+export interface Category {
+  id: string;
   title: string;
-  message: string;
-  onConfirm: () => void;
-  confirmText?: string;
-  isDanger?: boolean;
+  tasks: Task[];
+}
+
+export interface Phase {
+  id: string;
+  title: string;
+  description: string;
+  isExpanded: boolean;
+  categories: Category[];
 }

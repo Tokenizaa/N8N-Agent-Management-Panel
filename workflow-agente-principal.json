@@ -25,7 +25,7 @@
         340
       ],
       "webhookId": "7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d",
-      "notes": "Este é o ponto de entrada do seu agente. Configure sua API de WhatsApp (ex: Baileys API) para enviar as mensagens recebidas para esta URL."
+      "notes": "Este é o ponto de entrada do seu agente. Configure sua API de WhatsApp (ex: Baileys API) para enviar as mensagens recebidas para esta URL.\\n\\nPara usar um agente específico, envie o parâmetro `agent_id` no corpo (body) da requisição."
     },
     {
       "parameters": {
@@ -54,7 +54,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        2100,
+        2320,
         -100
       ]
     },
@@ -238,9 +238,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT * FROM agents WHERE is_default = true LIMIT 1;"
+        "query": "SELECT is_active FROM agent_config WHERE id = 1;"
       },
-      "name": "DB: Carregar Agente Padrão1",
+      "name": "DB: Verificar Status do Fluxo",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
       "position": [
@@ -260,13 +260,13 @@
         "conditions": {
           "boolean": [
             {
-              "value1": "={{$node[\"DB: Carregar Agente Padrão1\"].json.is_active}}",
+              "value1": "={{$node[\"DB: Verificar Status do Fluxo\"].json.is_active}}",
               "value2": true
             }
           ]
         }
       },
-      "name": "IF: Agente está Ativo?",
+      "name": "IF: Fluxo está Ativo?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
@@ -291,7 +291,7 @@
       "typeVersion": 1,
       "position": [
         2340,
-        -100
+        0
       ]
     },
     {
@@ -323,8 +323,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 2,
       "position": [
-        2560,
-        180
+        2980,
+        -100
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -335,14 +335,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Pega as últimas 6 mensagens e formata\nconst messages = $json.payload.slice(-6);\n\nconst history = messages.map(msg => {\n  const prefix = msg.message_type === 'incoming' ? 'Cliente:' : 'Agente:';\n  return `${prefix} ${msg.content}`;\n}).join('\\n');\n\nreturn { history };"
+        "jsCode": "// Pega as últimas 10 mensagens e formata\nconst messages = $json.payload;\n\nconst history = messages\n  .filter(msg => msg.content) // Filtra mensagens sem conteúdo (ex: activity messages)\n  .slice(-10)\n  .map(msg => {\n    let prefix;\n    if (msg.private) {\n      prefix = 'NOTA INTERNA:';\n    } else if (msg.message_type === 'incoming') {\n      prefix = 'Cliente:';\n    } else {\n      prefix = 'Agente:';\n    }\n    return `${prefix} ${msg.content}`;\n}).join('\\n');\n\nreturn { history };"
       },
       "name": "Código: Formatar Histórico",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        2780,
-        180
+        3200,
+        -100
       ]
     },
     {
@@ -354,23 +354,23 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        2780,
-        340
+        4080,
+        640
       ],
       "notes": "Aguarda o tempo definido na configuração do agente antes de prosseguir. O valor é pego da coluna 'waitTime' do banco de dados."
     },
     {
       "parameters": {
         "model": "gemini-2.5-flash",
-        "prompt": "={{$node[\"Código: Processar Variáveis do Prompt\"].json.processedPrompt}}\\n\\nHISTÓRICO DA CONVERSA RECENTE:\\n{{$node[\"Código: Formatar Histórico\"].json.history || 'Nenhum histórico encontrado.'}}\\n\\nNOVA MENSAGEM DO CLIENTE:\\n{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
+        "prompt": "={{$node[\"Merge Agent Prompt\"].json.prompt}}\\n\\nHISTÓRICO DA CONVERSA RECENTE:\\n{{$node[\"Código: Formatar Histórico\"].json.history || 'Nenhum histórico encontrado.'}}\\n\\nNOVA MENSGEM DO CLIENTE:\\n{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
         "options": {}
       },
-      "name": "IA: Gerar Resposta (Gemini)",
+      "name": "IA: Gerar Resposta",
       "type": "n8n-nodes-base.googleGemini",
       "typeVersion": 1,
       "position": [
-        3100,
-        340
+        4400,
+        640
       ],
       "notes": "Usa o prompt do agente correto, o histórico e a mensagem do cliente para gerar uma resposta."
     },
@@ -389,7 +389,7 @@
               "name": "textMessage",
               "value": {
                 "__rl": true,
-                "value": "={{$node[\"IA: Gerar Resposta (Gemini)\"].json.candidates[0].content.parts[0].text}}",
+                "value": "={{$node[\"IA: Gerar Resposta\"].json.candidates[0].content.parts[0].text}}",
                 "mode": "json"
               }
             }
@@ -401,8 +401,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        3320,
-        340
+        4620,
+        640
       ],
       "notes": "Envia a resposta gerada pela IA de volta para o cliente via API Baileys.\\n\\n**Variáveis de Ambiente Necessárias:**\\n- `BAILEYS_API_URL`\\n\\n**Credenciais Necessárias:**\\n- Crie credenciais 'Header Auth' com:\\n  - Name: `apikey`\\n  - Value: `{{$env.BAILEYS_API_KEY}}`",
       "credentials": {
@@ -439,8 +439,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 2,
       "position": [
-        3540,
-        500
+        4840,
+        800
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -458,7 +458,7 @@
           "parameters": [
             {
               "name": "content",
-              "value": "={{$node[\"IA: Gerar Resposta (Gemini)\"].json.candidates[0].content.parts[0].text}}"
+              "value": "={{$node[\"IA: Gerar Resposta\"].json.candidates[0].content.parts[0].text}}"
             },
             {
               "name": "message_type",
@@ -476,8 +476,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 2,
       "position": [
-        3540,
-        180
+        4840,
+        480
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -515,13 +515,13 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT name FROM agents WHERE name != '{{$node[\"Código: Extrair Label do Agente\"].json.agentName || 'Secretária'}}';"
+        "query": "SELECT name, description FROM agents WHERE is_default = false AND is_active = true;"
       },
-      "name": "DB: Listar Nomes de Agentes",
+      "name": "DB: Listar Agentes Especialistas",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
       "position": [
-        3000,
+        3620,
         -100
       ],
       "credentials": {
@@ -534,14 +534,14 @@
     {
       "parameters": {
         "model": "gemini-2.5-flash",
-        "prompt": "Analise a conversa abaixo. O cliente precisa ser transferido para outro departamento? Os departamentos disponíveis são: [{{$node[\"DB: Listar Nomes de Agentes\"].json.map(item => `\"${item.name}\"`).join(', ')}}].\\nSe uma transferência for necessária, responda APENAS com o nome do departamento (ex: Financeiro). Caso contrário, responda 'nenhum'.\\n\\nHISTÓRICO:\\n{{$node[\"Código: Formatar Histórico\"].json.history}}\\n\\nMENSAGEM DO CLIENTE:\\n{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
+        "prompt": "Você é um roteador de intenções para uma clínica. Sua função é analisar a mensagem do cliente e o histórico da conversa para decidir qual agente especialista deve assumir. Se a conversa for um cumprimento, uma pergunta genérica, ou não se encaixar claramente em nenhum especialista, o atendimento deve continuar com o agente padrão (Orquestrador).\\n\\nOs especialistas disponíveis são:\\n{{$node[\"DB: Listar Agentes Especialistas\"].json.map(item => `- ${item.name}: ${item.description}`).join('\\n')}}\\n\\nAnalise o contexto e responda APENAS com o nome do agente que deve atender. Se a conversa deve continuar com o agente padrão, responda 'Orquestrador'.\\n\\nHISTÓRICO DA CONVERSA:\\n{{$node[\"Código: Formatar Histórico\"].json.history || 'Nenhum histórico.'}}\\n\\nNOVA MENSAGEM DO CLIENTE:\\n{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
         "options": {}
       },
-      "name": "IA: Classificar Intenção de Escalação",
+      "name": "IA: Roteador de Intenção",
       "type": "n8n-nodes-base.googleGemini",
       "typeVersion": 1,
       "position": [
-        3220,
+        3840,
         -100
       ]
     },
@@ -550,9 +550,9 @@
         "conditions": {
           "string": [
             {
-              "value1": "={{$node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text}}",
-              "value2": "nenhum",
-              "operation": "notContains",
+              "value1": "={{$node[\"IA: Roteador de Intenção\"].json.candidates[0].content.parts[0].text}}",
+              "operation": "notEquals",
+              "value2": "Orquestrador",
               "options": {
                 "caseSensitive": false
               }
@@ -560,136 +560,180 @@
           ]
         }
       },
-      "name": "IF: Escalação Necessária?",
+      "name": "IF: Roteamento para Especialista?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        3440,
+        4060,
         -100
       ]
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT is_active FROM agents WHERE name = '{{$node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim()}}' LIMIT 1;"
+        "model": "gemini-2.5-flash",
+        "prompt": "Resuma a conversa abaixo de forma concisa para um colega especialista que vai assumir o atendimento. Foque no problema principal do cliente e no que já foi discutido.\\n\\nHISTÓRICO:\\n{{$node[\"Código: Formatar Histórico\"].json.history}}",
+        "options": {}
       },
-      "name": "DB: Verificar Disponibilidade do Agente Alvo",
-      "type": "n8n-nodes-base.postgres",
+      "name": "IA: Gerar Resumo para Handover",
+      "type": "n8n-nodes-base.googleGemini",
       "typeVersion": 1,
       "position": [
-        3660,
-        -100
+        4280,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/messages",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$node[\"IA: Gerar Resumo para Handover\"].json.candidates[0].content.parts[0].text}}"
+            },
+            {
+              "name": "private",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Postar Nota Privada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        4500,
+        -220
       ],
       "credentials": {
-        "postgres": {
-          "id": "YOUR_DB_CREDENTIALS_ID",
-          "name": "Postgres credentials"
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
         }
       }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/labels",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "labels[]",
+              "value": "=agent:{{$node[\"IA: Roteador de Intenção\"].json.candidates[0].content.parts[0].text.trim()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Adicionar Label de Roteamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        4720,
+        -220
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return { \n  candidates: [\n    {\n      content: {\n        parts: [\n          {\n            text: `Um momento, estou te transferindo para o nosso especialista do setor ${$node[\"IA: Roteador de Intenção\"].json.candidates[0].content.parts[0].text.trim()}.`\n          }\n        ]\n      }\n    }\n  ]\n}"
+      },
+      "name": "Set: Mensagem de Transferência",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        4940,
+        -220
+      ]
     },
     {
       "parameters": {
         "conditions": {
           "boolean": [
             {
-              "value1": "={{$node[\"DB: Verificar Disponibilidade do Agente Alvo\"].json.is_active}}",
+              "value1": "={{$node[\"Merge Agent Prompt\"].json.is_default}}",
               "value2": true
             }
           ]
         }
       },
-      "name": "IF: Agente Alvo Disponível?",
+      "name": "IF: Agente é Padrão (Orquestrador)?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        3880,
+        3400,
         -100
       ]
     },
     {
       "parameters": {
-        "jsCode": "const agentName = $node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim();\nreturn {\n  unavailableMessage: `O departamento '${agentName}' não está disponível no momento. Por favor, tente novamente mais tarde.`\n};"
+        "model": "gemini-2.5-flash",
+        "prompt": "Analise a resposta do agente e o histórico da conversa. A tarefa principal do especialista foi concluída com esta resposta? Responda APENAS 'sim' ou 'não'.\\n\\nHISTÓRICO:\\n{{$node[\"Código: Formatar Histórico\"].json.history}}\\n\\nRESPOSTA DO AGENTE:\\n{{$node[\"IA: Gerar Resposta\"].json.candidates[0].content.parts[0].text}}",
+        "options": {}
       },
-      "name": "Código: Criar Mensagem de Indisponibilidade",
-      "type": "n8n-nodes-base.code",
+      "name": "IA: Verificar Conclusão da Tarefa",
+      "type": "n8n-nodes-base.googleGemini",
       "typeVersion": 1,
       "position": [
-        4080,
-        60
+        4840,
+        640
       ]
     },
     {
       "parameters": {
-        "url": "={{$env.BAILEYS_API_URL}}/message/sendText",
-        "authentication": "headerAuth",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
+        "conditions": {
+          "string": [
             {
-              "name": "number",
-              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
-            },
-            {
-              "name": "textMessage",
-              "value": {
-                "__rl": true,
-                "value": "={{$node[\"Código: Criar Mensagem de Indisponibilidade\"].json.unavailableMessage}}",
-                "mode": "json"
+              "value1": "={{$node[\"IA: Verificar Conclusão da Tarefa\"].json.candidates[0].content.parts[0].text}}",
+              "operation": "contains",
+              "value2": "sim",
+              "options": {
+                "caseSensitive": false
               }
             }
           ]
-        },
-        "options": {}
-      },
-      "name": "Baileys: Enviar Mensagem de Indisponibilidade",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        4300,
-        60
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "YOUR_BAILEYS_API_KEY_ID",
-          "name": "Baileys API Key"
         }
-      }
-    },
-    {
-      "parameters": {
-        "data": "Notified user about agent unavailability.",
-        "options": {}
       },
-      "name": "Stop Workflow",
-      "type": "n8n-nodes-base.respondToWebhook",
+      "name": "IF: Tarefa Concluída?",
+      "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        4520,
-        60
+        5060,
+        640
       ]
     },
     {
       "parameters": {
         "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/labels",
-        "authentication": "headerAuth",
         "method": "DELETE",
+        "authentication": "headerAuth",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
             {
               "name": "labels[]",
-              "value": "=agent:{{$node[\"Código: Extrair Label do Agente\"].json.agentName}}"
+              "value": "=agent:{{$node[\"Merge Agent Prompt\"].json.name}}"
             }
           ]
         },
         "options": {}
       },
-      "name": "Chatwoot: Remover Label Antiga (se houver)",
+      "name": "Chatwoot: Remover Label de Escalação",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 2,
       "position": [
-        4300,
-        -260
+        5280,
+        540
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -700,14 +744,113 @@
     },
     {
       "parameters": {
-        "jsCode": "const newAgentName = $node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim();\nconst oldAgentName = $node[\"Código: Extrair Label do Agente\"].json.agentName || 'Secretária';\n\nreturn {\n  handoverMessage: `Ok, entendi. Estou transferindo sua conversa do(a) ${oldAgentName} para o departamento ${newAgentName}. Por favor, aguarde um momento.`\n};"
+        "model": "gemini-2.5-flash",
+        "prompt": "Analise o texto a seguir e extraia as seguintes informações se estiverem presentes: nome completo da pessoa (name), endereço de e-mail (email), e o principal produto ou serviço de interesse (product_interest). Se uma informação não for encontrada, deixe o campo correspondente vazio. Responda apenas com o JSON.\n\nTexto: {{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
+        "options": {
+          "responseMimeType": "application/json",
+          "responseSchema": {
+            "type": "OBJECT",
+            "properties": {
+              "name": {
+                "type": "STRING"
+              },
+              "email": {
+                "type": "STRING"
+              },
+              "product_interest": {
+                "type": "STRING"
+              }
+            }
+          }
+        }
       },
-      "name": "Código: Criar Mensagem de Transferência",
+      "name": "IA: Extrair Entidades",
+      "type": "n8n-nodes-base.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        5060,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const entities = JSON.parse($json.candidates[0].content.parts[0].text);\nconst custom_attributes = {};\n\nif (entities.name) {\n  custom_attributes.nome_completo = entities.name;\n}\nif (entities.email) {\n  custom_attributes.email = entities.email;\n}\nif (entities.product_interest) {\n  custom_attributes.produto_interesse = entities.product_interest;\n}\n\n// Return the object only if it has keys\nif (Object.keys(custom_attributes).length > 0) {\n    return { custom_attributes };\n}\n\nreturn { custom_attributes: null };"
+      },
+      "name": "Código: Preparar Atributos Customizados",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        4300,
-        -100
+        5280,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.custom_attributes}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "IF: Atributos Extraídos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        5500,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts/{{$node[\"Merge\"].json.contactId}}",
+        "method": "PATCH",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"custom_attributes\": {{$node[\"Código: Preparar Atributos Customizados\"].json.custom_attributes}}}",
+        "options": {}
+      },
+      "name": "Chatwoot: Atualizar Atributos do Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        5720,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.5-flash",
+        "prompt": "Classifique o sentimento do seguinte texto como 'positivo', 'neutro' ou 'negativo'. Responda APENAS com uma dessas três palavras em minúsculo.\n\nTexto: {{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
+        "options": {}
+      },
+      "name": "IA: Analisar Sentimento",
+      "type": "n8n-nodes-base.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        5060,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const currentLabels = $node[\"Código: Extrair Label do Agente\"].json.labels;\nconst newSentiment = $json.candidates[0].content.parts[0].text.trim().toLowerCase();\n\n// Filter out any old sentiment labels\nconst otherLabels = currentLabels.filter(label => !label.startsWith('sentiment:'));\n\n// Add the new sentiment label\nconst newLabels = [...otherLabels, `sentiment:${newSentiment}`];\n\nreturn { labels: newLabels };"
+      },
+      "name": "Código: Preparar Labels de Sentimento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        5280,
+        480
       ]
     },
     {
@@ -719,18 +862,18 @@
           "parameters": [
             {
               "name": "labels[]",
-              "value": "=agent:{{$node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim()}}"
+              "value": "={{$node[\"Código: Preparar Labels de Sentimento\"].json.labels}}"
             }
           ]
         },
         "options": {}
       },
-      "name": "Chatwoot: Adicionar Nova Label de Agente",
+      "name": "Chatwoot: Atualizar Labels da Conversa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 2,
       "position": [
-        4520,
-        -100
+        5500,
+        480
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -738,56 +881,6 @@
           "name": "Chatwoot API credentials"
         }
       }
-    },
-    {
-      "parameters": {
-        "url": "={{$env.BAILEYS_API_URL}}/message/sendText",
-        "authentication": "headerAuth",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "number",
-              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
-            },
-            {
-              "name": "textMessage",
-              "value": {
-                "__rl": true,
-                "value": "={{$node[\"Código: Criar Mensagem de Transferência\"].json.handoverMessage}}",
-                "mode": "json"
-              }
-            }
-          ]
-        },
-        "options": {}
-      },
-      "name": "Baileys: Enviar Mensagem de Transferência",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [
-        4740,
-        -100
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "YOUR_BAILEYS_API_KEY_ID",
-          "name": "Baileys API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const agentData = $items(\"Merge Agent Prompt\")[0].json;\nlet prompt = agentData.prompt;\n\nconst senderData = $items(\"Webhook: Recebe Mensagem (WhatsApp)\")[0].json.body.sender;\nconst customerName = senderData.pushName || 'cliente';\n\nconst agentName = agentData.name;\n\nconst now = new Date();\nconst currentDate = now.toLocaleDateString('pt-BR');\nconst currentTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });\n\nprompt = prompt.replace(/{{\\s*customer_name\\s*}}/g, customerName);\nprompt = prompt.replace(/{{\\s*agent_name\\s*}}/g, agentName);\nprompt = prompt.replace(/{{\\s*current_date\\s*}}/g, currentDate);\nprompt = prompt.replace(/{{\\s*current_time\\s*}}/g, currentTime);\n\nreturn {\n    processedPrompt: prompt\n};"
-      },
-      "name": "Código: Processar Variáveis do Prompt",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 1,
-      "position": [
-        2900,
-        340
-      ],
-      "id": "c4a31a9d-1b1e-4c7c-8e3a-7f6d5e4b2d1f"
     }
   ],
   "connections": {
@@ -795,7 +888,7 @@
       "main": [
         [
           {
-            "node": "DB: Carregar Agente Padrão1",
+            "node": "DB: Verificar Status do Fluxo",
             "type": "main",
             "index": 0
           }
@@ -808,7 +901,7 @@
           {
             "node": "Merge Agent Prompt",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -874,7 +967,7 @@
           {
             "node": "Merge",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -930,18 +1023,18 @@
         ]
       ]
     },
-    "DB: Carregar Agente Padrão1": {
+    "DB: Verificar Status do Fluxo": {
       "main": [
         [
           {
-            "node": "IF: Agente está Ativo?",
+            "node": "IF: Fluxo está Ativo?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF: Agente está Ativo?": {
+    "IF: Fluxo está Ativo?": {
       "main": [
         [
           {
@@ -956,14 +1049,14 @@
       "main": [
         [
           {
-            "node": "DB: Carregar Agente Padrão",
+            "node": "DB: Carregar Agente por Label",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "DB: Carregar Agente por Label",
+            "node": "DB: Carregar Agente Padrão",
             "type": "main",
             "index": 0
           }
@@ -996,7 +1089,7 @@
       "main": [
         [
           {
-            "node": "Wait (Tempo de Espera)",
+            "node": "IF: Agente é Padrão (Orquestrador)?",
             "type": "main",
             "index": 0
           }
@@ -1007,14 +1100,14 @@
       "main": [
         [
           {
-            "node": "Código: Processar Variáveis do Prompt",
+            "node": "IA: Gerar Resposta",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IA: Gerar Resposta (Gemini)": {
+    "IA: Gerar Resposta": {
       "main": [
         [
           {
@@ -1039,7 +1132,23 @@
             "index": 0
           },
           {
-            "node": "DB: Listar Nomes de Agentes",
+            "node": "IA: Verificar Conclusão da Tarefa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Registrar Resposta do Agente": {
+      "main": [
+        [
+          {
+            "node": "IA: Extrair Entidades",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IA: Analisar Sentimento",
             "type": "main",
             "index": 0
           }
@@ -1068,128 +1177,179 @@
         ]
       ]
     },
-    "DB: Listar Nomes de Agentes": {
+    "DB: Listar Agentes Especialistas": {
       "main": [
         [
           {
-            "node": "IA: Classificar Intenção de Escalação",
+            "node": "IA: Roteador de Intenção",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IA: Classificar Intenção de Escalação": {
+    "IA: Roteador de Intenção": {
       "main": [
         [
           {
-            "node": "IF: Escalação Necessária?",
+            "node": "IF: Roteamento para Especialista?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF: Escalação Necessária?": {
+    "IF: Roteamento para Especialista?": {
       "main": [
         [
           {
-            "node": "DB: Verificar Disponibilidade do Agente Alvo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "DB: Verificar Disponibilidade do Agente Alvo": {
-      "main": [
-        [
-          {
-            "node": "IF: Agente Alvo Disponível?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF: Agente Alvo Disponível?": {
-      "main": [
-        [
-          {
-            "node": "Chatwoot: Remover Label Antiga (se houver)",
+            "node": "IA: Gerar Resumo para Handover",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Código: Criar Mensagem de Indisponibilidade",
+            "node": "Wait (Tempo de Espera)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Código: Criar Mensagem de Indisponibilidade": {
+    "IA: Gerar Resumo para Handover": {
       "main": [
         [
           {
-            "node": "Baileys: Enviar Mensagem de Indisponibilidade",
+            "node": "Chatwoot: Postar Nota Privada",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Baileys: Enviar Mensagem de Indisponibilidade": {
+    "Chatwoot: Postar Nota Privada": {
       "main": [
         [
           {
-            "node": "Stop Workflow",
+            "node": "Chatwoot: Adicionar Label de Roteamento",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chatwoot: Remover Label Antiga (se houver)": {
+    "Chatwoot: Adicionar Label de Roteamento": {
       "main": [
         [
           {
-            "node": "Código: Criar Mensagem de Transferência",
+            "node": "Set: Mensagem de Transferência",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Código: Criar Mensagem de Transferência": {
+    "Set: Mensagem de Transferência": {
       "main": [
         [
           {
-            "node": "Chatwoot: Adicionar Nova Label de Agente",
+            "node": "IA: Gerar Resposta",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chatwoot: Adicionar Nova Label de Agente": {
+    "IF: Agente é Padrão (Orquestrador)?": {
       "main": [
         [
           {
-            "node": "Baileys: Enviar Mensagem de Transferência",
+            "node": "DB: Listar Agentes Especialistas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait (Tempo de Espera)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Código: Processar Variáveis do Prompt": {
+    "IA: Verificar Conclusão da Tarefa": {
       "main": [
         [
           {
-            "node": "IA: Gerar Resposta (Gemini)",
+            "node": "IF: Tarefa Concluída?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Tarefa Concluída?": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Remover Label de Escalação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: Extrair Entidades": {
+      "main": [
+        [
+          {
+            "node": "Código: Preparar Atributos Customizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Preparar Atributos Customizados": {
+      "main": [
+        [
+          {
+            "node": "IF: Atributos Extraídos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Atributos Extraídos?": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Atualizar Atributos do Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: Analisar Sentimento": {
+      "main": [
+        [
+          {
+            "node": "Código: Preparar Labels de Sentimento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Preparar Labels de Sentimento": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Atualizar Labels da Conversa",
             "type": "main",
             "index": 0
           }

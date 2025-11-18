@@ -29,14 +29,14 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT waitTime, notificationTrigger, notificationNumbers, is_active, gemini_api_key, debug_mode FROM agent_config LIMIT 1;"
+        "query": "SELECT waitTime, notificationTrigger, notificationNumbers, is_active FROM agent_config LIMIT 1;"
       },
       "name": "DB: Get Agent Config",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
       "position": [
         680,
-        -140
+        20
       ],
       "credentials": {
         "postgres": {
@@ -56,7 +56,7 @@
       "typeVersion": 1,
       "position": [
         680,
-        200
+        300
       ],
       "credentials": {
         "postgres": {
@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const config = $items('DB: Get Agent Config')[0].json; \nconst agentsRaw = $items('DB: Get Agents').map(item => item.json);\nconst followUps = $items('DB: Get Follow-ups').map(item => item.json);\nconst statusJson = $items('Baileys: Check Status')[0].json;\nconst logs = $items('DB: Get Logs').map(item => item.json);\n\n// Pega os dados do dashboard do nó correto (IF ou seu fallback)\nconst dashboardNode = $items('IF: Range = this_month').length > 0 ? $items('DB: Get Dashboard Data (This Month)') : $items('DB: Get Dashboard Data (Default)');\nconst dashboard = dashboardNode[0].json;\n\nconst agents = agentsRaw.map(agent => ({\n    ...agent,\n    available_tools: agent.available_tools || []\n}));\n\n// Formata os dados para o frontend\nconst formattedData = {\n  agentConfig: {\n    waitTime: config.waitTime,\n    notificationTrigger: config.notificationTrigger,\n    notificationNumbers: config.notificationNumbers,\n    is_active: config.is_active,\n    debug_mode: config.debug_mode,\n    geminiApiKey: config.gemini_api_key\n  },\n  agents: agents,\n  followUpCadences: followUps,\n  logs: logs,\n  dashboardData: {\n      kpis: {\n          totalLeads: Number(dashboard.total_leads) || 0,\n          totalCompras: Number(dashboard.total_compras) || 0,\n          totalFaturado: Number(dashboard.total_faturado) || 0,\n          ticketMedio: Number(dashboard.ticket_medio) || 0,\n          taxaConversao: Number(dashboard.taxa_conversao) || 0\n      },\n      leadsPorDia: [\n          { name: 'Seg', leads: 4 },\n          { name: 'Ter', leads: 3 },\n          { name: 'Qua', leads: 2 },\n          { name: 'Qui', leads: 2 },\n          { name: 'Sex', leads: 1 },\n          { name: 'Sáb', leads: 2 },\n          { name: 'Dom', leads: 3 },\n      ] // Mockado, mas poderia vir do DB\n  },\n  isWhatsAppConnected: statusJson.data?.status === 'CONNECTED'\n};\n\nreturn formattedData;"
+        "jsCode": "const config = $items('DB: Get Agent Config')[0].json; \nconst followUps = $items('DB: Get Follow-ups').map(item => item.json);\nconst statusJson = $items('Baileys: Check Status')[0].json;\nconst agentsRaw = $items('DB: Get Agents').map(item => item.json);\n\n// Pega os dados do dashboard do nó correto (IF ou seu fallback)\nconst dashboardNode = $items('IF: Range = this_month').length > 0 ? $items('DB: Get Dashboard Data (This Month)') : $items('DB: Get Dashboard Data (Default)');\nconst dashboard = dashboardNode[0].json;\n\nconst statuses = ['online', 'busy', 'offline'];\nconst agents = agentsRaw.map((agent, index) => ({\n    ...agent,\n    available_tools: agent.available_tools || [],\n    enable_follow_up: agent.enable_follow_up ?? false,\n    status: statuses[index % statuses.length] // Mock status for UI\n}));\n\n// Formata os dados para o frontend\nconst formattedData = {\n  agentConfig: {\n    waitTime: config.waitTime,\n    notificationTrigger: config.notificationTrigger,\n    notificationNumbers: config.notificationNumbers,\n    is_active: config.is_active\n  },\n  agents: agents,\n  followUpCadences: followUps,\n  dashboardData: {\n      kpis: {\n          totalLeads: Number(dashboard.total_leads) || 0,\n          totalCompras: Number(dashboard.total_compras) || 0,\n          totalFaturado: Number(dashboard.total_faturado) || 0,\n          ticketMedio: Number(dashboard.ticket_medio) || 0,\n          taxaConversao: Number(dashboard.taxa_conversao) || 0\n      },\n      leadsPorDia: [\n          { name: 'Seg', leads: 4 },\n          { name: 'Ter', leads: 3 },\n          { name: 'Qua', leads: 2 },\n          { name: 'Qui', leads: 2 },\n          { name: 'Sex', leads: 1 },\n          { name: 'Sáb', leads: 2 },\n          { name: 'Dom', leads: 3 },\n      ],\n      leadDetails: {\n          compras: [\n              { id: 'L001', name: 'João Silva', value: 250.00, date: '2024-07-20', agent: 'Assistente de Vendas' },\n              { id: 'L003', name: 'Maria Oliveira', value: 450.50, date: '2024-07-19', agent: 'Assistente de Vendas' },\n              { id: 'L005', name: 'Pedro Alves', value: 150.00, date: '2024-07-18', agent: 'Assistente de Vendas' }\n          ],\n          leads: [\n              { id: 'L001', name: 'João Silva', value: 0, date: '2024-07-20', agent: 'Secretária' },\n              { id: 'L002', name: 'Carlos Pereira', value: 0, date: '2024-07-20', agent: 'Secretária' },\n              { id: 'L003', name: 'Maria Oliveira', value: 0, date: '2024-07-19', agent: 'Secretária' },\n              { id: 'L004', name: 'Ana Costa', value: 0, date: '2024-07-18', agent: 'Secretária' }\n          ]\n      }\n  },\n  isWhatsAppConnected: statusJson.data?.status === 'CONNECTED'\n};\n\nreturn formattedData;"
       },
       "name": "Format Data for FE",
       "type": "n8n-nodes-base.code",
@@ -160,7 +160,7 @@
       "typeVersion": 4.1,
       "position": [
         680,
-        -300
+        -140
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -173,14 +173,14 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id, name, description, prompt, is_default, is_active, available_tools, sort_order FROM agents ORDER BY sort_order ASC, id ASC;"
+        "query": "SELECT id, name, description, prompt, is_default, is_active, available_tools, sort_order, enable_follow_up FROM agents ORDER BY sort_order ASC, id ASC;"
       },
       "name": "DB: Get Agents",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
       "position": [
         680,
-        40
+        160
       ],
       "credentials": {
         "postgres": {
@@ -188,26 +188,6 @@
           "name": "Postgres credentials"
         }
       }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT id, timestamp, agent_name, level, message, details FROM agent_logs ORDER BY timestamp DESC LIMIT 200;"
-      },
-      "name": "DB: Get Logs",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [
-        680,
-        360
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "YOUR_DB_CREDENTIALS_ID",
-          "name": "Postgres credentials"
-        }
-      },
-      "notes": "Conecte às suas credenciais do Supabase/Postgres.\\n\\nPara o Supabase, vá em Project Settings > Database > Connection string e use os detalhes do 'URI'."
     }
   ],
   "connections": {
@@ -236,11 +216,6 @@
           },
           {
             "node": "DB: Get Agents",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "DB: Get Logs",
             "type": "main",
             "index": 0
           }
@@ -332,17 +307,6 @@
       ]
     },
     "DB: Get Agents": {
-      "main": [
-        [
-          {
-            "node": "Format Data for FE",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "DB: Get Logs": {
       "main": [
         [
           {
