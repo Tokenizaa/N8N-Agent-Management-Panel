@@ -1,0 +1,1200 @@
+
+{
+  "name": "[AGENTE] Lógica Principal de Resposta",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "path": "agent-webhook",
+        "options": {}
+      },
+      "name": "Webhook: Recebe Mensagem (WhatsApp)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        200,
+        340
+      ],
+      "webhookId": "7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d",
+      "notes": "Este é o ponto de entrada do seu agente. Configure sua API de WhatsApp (ex: Baileys API) para enviar as mensagens recebidas para esta URL."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM agents WHERE is_default = true LIMIT 1;"
+      },
+      "name": "DB: Carregar Agente Padrão",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const labels = $json.payload.map(label => label.title);\nconst agentLabel = labels.find(label => label.startsWith('agent:'));\n\nlet agentName = '';\nif (agentLabel) {\n  agentName = agentLabel.split(':')[1];\n}\n\nreturn { agentName, labels };"
+      },
+      "name": "Código: Extrair Label do Agente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Chatwoot: Obter Detalhes da Conversa (Labels)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const conversations = $json.payload;\n// Pega a conversa mais recente\nconst latestConversation = conversations.sort((a, b) => b.id - a.id)[0];\n\nreturn {\n  conversationId: latestConversation.id\n}"
+      },
+      "name": "Set Conversation ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts/{{$node[\"Set Contact Info (Existing)\"].json.contactId}}/conversations",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Chatwoot: Listar Conversas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const contactData = $json.payload[0];\n\nreturn {\n  contactId: contactData.id\n}"
+      },
+      "name": "Set Contact Info (Existing)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const contactData = $json.payload;\n\nreturn {\n  contactId: contactData.id,\n  conversationId: contactData.contact_inbox.conversation_id\n}\n"
+      },
+      "name": "Set Contact Info (New)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (id, name, status) VALUES ('{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}', '{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.pushName}}', 'novo');"
+      },
+      "name": "DB: Insert Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      },
+      "notes": "Insere um novo registro na tabela 'leads' para tracking no dashboard."
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "inbox_id",
+              "value": "={{$env.CHATWOOT_WHATSAPP_INBOX_ID}}"
+            },
+            {
+              "name": "name",
+              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.pushName}}"
+            },
+            {
+              "name": "phone_number",
+              "value": "=+{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Criar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      },
+      "notes": "Cria um novo contato no Chatwoot se ele não for encontrado.\\n\\n**Variável de Ambiente Necessária:**\\n- `CHATWOOT_WHATSAPP_INBOX_ID`"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.meta.count}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "IF: Contato Existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts/search",
+        "authentication": "headerAuth",
+        "options": {},
+        "queryParameters": {
+          "q": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
+        }
+      },
+      "name": "Chatwoot: Buscar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        840,
+        340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM agents WHERE is_default = true LIMIT 1;"
+      },
+      "name": "DB: Carregar Agente Padrão1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        420,
+        340
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      },
+      "notes": "Busca o prompt e outras configurações do banco de dados Supabase.\\n\\nPara o Supabase, vá em Project Settings > Database > Connection string e use os detalhes do 'URI'."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"DB: Carregar Agente Padrão1\"].json.is_active}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF: Agente está Ativo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        620,
+        340
+      ],
+      "notes": "Verifica se o agente está ativo no banco de dados. Se não estiver, o fluxo é interrompido aqui."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"Código: Extrair Label do Agente\"].json.agentName}}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "name": "IF: Existe Label de Agente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM agents WHERE name = '{{$node[\"Código: Extrair Label do Agente\"].json.agentName}}';"
+      },
+      "name": "DB: Carregar Agente por Label",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        -100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/messages",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Chatwoot: Obter Mensagens da Conversa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega as últimas 6 mensagens e formata\nconst messages = $json.payload.slice(-6);\n\nconst history = messages.map(msg => {\n  const prefix = msg.message_type === 'incoming' ? 'Cliente:' : 'Agente:';\n  return `${prefix} ${msg.content}`;\n}).join('\\n');\n\nreturn { history };"
+      },
+      "name": "Código: Formatar Histórico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2780,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "delay": "={{$node[\"Merge Agent Prompt\"].json.wait_time}}",
+        "unit": "seconds"
+      },
+      "name": "Wait (Tempo de Espera)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2780,
+        340
+      ],
+      "notes": "Aguarda o tempo definido na configuração do agente antes de prosseguir. O valor é pego da coluna 'waitTime' do banco de dados."
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.5-flash",
+        "prompt": "={{$node[\"Código: Processar Variáveis do Prompt\"].json.processedPrompt}}\\n\\nHISTÓRICO DA CONVERSA RECENTE:\\n{{$node[\"Código: Formatar Histórico\"].json.history || 'Nenhum histórico encontrado.'}}\\n\\nNOVA MENSAGEM DO CLIENTE:\\n{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
+        "options": {}
+      },
+      "name": "IA: Gerar Resposta (Gemini)",
+      "type": "n8n-nodes-base.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        3100,
+        340
+      ],
+      "notes": "Usa o prompt do agente correto, o histórico e a mensagem do cliente para gerar uma resposta."
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/message/sendText",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
+            },
+            {
+              "name": "textMessage",
+              "value": {
+                "__rl": true,
+                "value": "={{$node[\"IA: Gerar Resposta (Gemini)\"].json.candidates[0].content.parts[0].text}}",
+                "mode": "json"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Baileys: Enviar Resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        3320,
+        340
+      ],
+      "notes": "Envia a resposta gerada pela IA de volta para o cliente via API Baileys.\\n\\n**Variáveis de Ambiente Necessárias:**\\n- `BAILEYS_API_URL`\\n\\n**Credenciais Necessárias:**\\n- Crie credenciais 'Header Auth' com:\\n  - Name: `apikey`\\n  - Value: `{{$env.BAILEYS_API_KEY}}`",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/messages",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}"
+            },
+            {
+              "name": "message_type",
+              "value": "incoming"
+            },
+            {
+              "name": "private",
+              "value": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Registrar Mensagem do Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        3540,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/messages",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$node[\"IA: Gerar Resposta (Gemini)\"].json.candidates[0].content.parts[0].text}}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Registrar Resposta do Agente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        3540,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition",
+        "options": {}
+      },
+      "name": "Merge Agent Prompt",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1.1,
+      "position": [
+        2780,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition",
+        "options": {}
+      },
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1.1,
+      "position": [
+        1880,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT name FROM agents WHERE name != '{{$node[\"Código: Extrair Label do Agente\"].json.agentName || 'Secretária'}}';"
+      },
+      "name": "DB: Listar Nomes de Agentes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        3000,
+        -100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gemini-2.5-flash",
+        "prompt": "Analise a conversa abaixo. O cliente precisa ser transferido para outro departamento? Os departamentos disponíveis são: [{{$node[\"DB: Listar Nomes de Agentes\"].json.map(item => `\"${item.name}\"`).join(', ')}}].\\nSe uma transferência for necessária, responda APENAS com o nome do departamento (ex: Financeiro). Caso contrário, responda 'nenhum'.\\n\\nHISTÓRICO:\\n{{$node[\"Código: Formatar Histórico\"].json.history}}\\n\\nMENSAGEM DO CLIENTE:\\n{{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.data.message.conversation}}",
+        "options": {}
+      },
+      "name": "IA: Classificar Intenção de Escalação",
+      "type": "n8n-nodes-base.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        3220,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text}}",
+              "value2": "nenhum",
+              "operation": "notContains",
+              "options": {
+                "caseSensitive": false
+              }
+            }
+          ]
+        }
+      },
+      "name": "IF: Escalação Necessária?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3440,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT is_active FROM agents WHERE name = '{{$node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim()}}' LIMIT 1;"
+      },
+      "name": "DB: Verificar Disponibilidade do Agente Alvo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        3660,
+        -100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"DB: Verificar Disponibilidade do Agente Alvo\"].json.is_active}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF: Agente Alvo Disponível?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3880,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentName = $node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim();\nreturn {\n  unavailableMessage: `O departamento '${agentName}' não está disponível no momento. Por favor, tente novamente mais tarde.`\n};"
+      },
+      "name": "Código: Criar Mensagem de Indisponibilidade",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        4080,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/message/sendText",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
+            },
+            {
+              "name": "textMessage",
+              "value": {
+                "__rl": true,
+                "value": "={{$node[\"Código: Criar Mensagem de Indisponibilidade\"].json.unavailableMessage}}",
+                "mode": "json"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Baileys: Enviar Mensagem de Indisponibilidade",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        4300,
+        60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "data": "Notified user about agent unavailability.",
+        "options": {}
+      },
+      "name": "Stop Workflow",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        4520,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/labels",
+        "authentication": "headerAuth",
+        "method": "DELETE",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "labels[]",
+              "value": "=agent:{{$node[\"Código: Extrair Label do Agente\"].json.agentName}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Remover Label Antiga (se houver)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        4300,
+        -260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const newAgentName = $node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim();\nconst oldAgentName = $node[\"Código: Extrair Label do Agente\"].json.agentName || 'Secretária';\n\nreturn {\n  handoverMessage: `Ok, entendi. Estou transferindo sua conversa do(a) ${oldAgentName} para o departamento ${newAgentName}. Por favor, aguarde um momento.`\n};"
+      },
+      "name": "Código: Criar Mensagem de Transferência",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        4300,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Merge\"].json.conversationId}}/labels",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "labels[]",
+              "value": "=agent:{{$node[\"IA: Classificar Intenção de Escalação\"].json.candidates[0].content.parts[0].text.trim()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Adicionar Nova Label de Agente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        4520,
+        -100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/message/sendText",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$node[\"Webhook: Recebe Mensagem (WhatsApp)\"].json.body.sender.remoteJid}}"
+            },
+            {
+              "name": "textMessage",
+              "value": {
+                "__rl": true,
+                "value": "={{$node[\"Código: Criar Mensagem de Transferência\"].json.handoverMessage}}",
+                "mode": "json"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Baileys: Enviar Mensagem de Transferência",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        4740,
+        -100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentData = $items(\"Merge Agent Prompt\")[0].json;\nlet prompt = agentData.prompt;\n\nconst senderData = $items(\"Webhook: Recebe Mensagem (WhatsApp)\")[0].json.body.sender;\nconst customerName = senderData.pushName || 'cliente';\n\nconst agentName = agentData.name;\n\nconst now = new Date();\nconst currentDate = now.toLocaleDateString('pt-BR');\nconst currentTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });\n\nprompt = prompt.replace(/{{\\s*customer_name\\s*}}/g, customerName);\nprompt = prompt.replace(/{{\\s*agent_name\\s*}}/g, agentName);\nprompt = prompt.replace(/{{\\s*current_date\\s*}}/g, currentDate);\nprompt = prompt.replace(/{{\\s*current_time\\s*}}/g, currentTime);\n\nreturn {\n    processedPrompt: prompt\n};"
+      },
+      "name": "Código: Processar Variáveis do Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2900,
+        340
+      ],
+      "id": "c4a31a9d-1b1e-4c7c-8e3a-7f6d5e4b2d1f"
+    }
+  ],
+  "connections": {
+    "Webhook: Recebe Mensagem (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "DB: Carregar Agente Padrão1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Carregar Agente Padrão": {
+      "main": [
+        [
+          {
+            "node": "Merge Agent Prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Código: Extrair Label do Agente": {
+      "main": [
+        [
+          {
+            "node": "IF: Existe Label de Agente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Obter Detalhes da Conversa (Labels)": {
+      "main": [
+        [
+          {
+            "node": "Código: Extrair Label do Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Conversation ID": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Listar Conversas": {
+      "main": [
+        [
+          {
+            "node": "Set Conversation ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Contact Info (Existing)": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Listar Conversas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Contact Info (New)": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DB: Insert Lead": {
+      "main": [
+        [
+          {
+            "node": "Set Contact Info (New)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Criar Contato": {
+      "main": [
+        [
+          {
+            "node": "DB: Insert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Contato Existe?": {
+      "main": [
+        [
+          {
+            "node": "Set Contact Info (Existing)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chatwoot: Criar Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Buscar Contato": {
+      "main": [
+        [
+          {
+            "node": "IF: Contato Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Carregar Agente Padrão1": {
+      "main": [
+        [
+          {
+            "node": "IF: Agente está Ativo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Agente está Ativo?": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Buscar Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Existe Label de Agente?": {
+      "main": [
+        [
+          {
+            "node": "DB: Carregar Agente Padrão",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Carregar Agente por Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Carregar Agente por Label": {
+      "main": [
+        [
+          {
+            "node": "Merge Agent Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Obter Mensagens da Conversa": {
+      "main": [
+        [
+          {
+            "node": "Código: Formatar Histórico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Formatar Histórico": {
+      "main": [
+        [
+          {
+            "node": "Wait (Tempo de Espera)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (Tempo de Espera)": {
+      "main": [
+        [
+          {
+            "node": "Código: Processar Variáveis do Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: Gerar Resposta (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Baileys: Enviar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Enviar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Registrar Resposta do Agente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Chatwoot: Registrar Mensagem do Cliente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DB: Listar Nomes de Agentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Agent Prompt": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Obter Mensagens da Conversa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Obter Detalhes da Conversa (Labels)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Listar Nomes de Agentes": {
+      "main": [
+        [
+          {
+            "node": "IA: Classificar Intenção de Escalação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: Classificar Intenção de Escalação": {
+      "main": [
+        [
+          {
+            "node": "IF: Escalação Necessária?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Escalação Necessária?": {
+      "main": [
+        [
+          {
+            "node": "DB: Verificar Disponibilidade do Agente Alvo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Verificar Disponibilidade do Agente Alvo": {
+      "main": [
+        [
+          {
+            "node": "IF: Agente Alvo Disponível?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Agente Alvo Disponível?": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Remover Label Antiga (se houver)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Código: Criar Mensagem de Indisponibilidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Criar Mensagem de Indisponibilidade": {
+      "main": [
+        [
+          {
+            "node": "Baileys: Enviar Mensagem de Indisponibilidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Enviar Mensagem de Indisponibilidade": {
+      "main": [
+        [
+          {
+            "node": "Stop Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Remover Label Antiga (se houver)": {
+      "main": [
+        [
+          {
+            "node": "Código: Criar Mensagem de Transferência",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Criar Mensagem de Transferência": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Adicionar Nova Label de Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Adicionar Nova Label de Agente": {
+      "main": [
+        [
+          {
+            "node": "Baileys: Enviar Mensagem de Transferência",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Processar Variáveis do Prompt": {
+      "main": [
+        [
+          {
+            "node": "IA: Gerar Resposta (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

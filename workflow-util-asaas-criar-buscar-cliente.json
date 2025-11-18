@@ -1,0 +1,326 @@
+
+{
+  "name": "[UTIL] Asaas Criar ou Buscar Cliente",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "nome"
+            },
+            {
+              "name": "cpf"
+            },
+            {
+              "name": "telefone"
+            },
+            {
+              "name": "id_contato"
+            },
+            {
+              "name": "id_conta"
+            },
+            {
+              "name": "url_chatwoot"
+            },
+            {
+              "name": "url_asaas"
+            }
+          ]
+        }
+      },
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "b1a2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Start').item.json.url_asaas }}/v3/customers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "cpfCnpj",
+              "value": "={{ $('Start').item.json.cpf }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Asaas: Buscar Cliente por Documento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {}
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.data.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "IF: Cliente Encontrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "asaas_id_cliente",
+              "value": "={{ $('Asaas: Buscar Cliente por Documento').item.json.data[0].id }}"
+            }
+          ]
+        }
+      },
+      "name": "Set: ID Cliente (Existente)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Start').item.json.url_asaas }}/v3/customers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $('Start').item.json.nome }}"
+            },
+            {
+              "name": "cpfCnpj",
+              "value": "={{ $('Start').item.json.cpf }}"
+            },
+            {
+              "name": "mobilePhone",
+              "value": "={{ $('Start').item.json.telefone.replace(/^\\+55/, '') }}"
+            },
+            {
+              "name": "externalReference",
+              "value": "={{ $('Start').item.json.id_contato }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Asaas: Criar Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {}
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Start').item.json.url_chatwoot }}/api/v1/accounts/{{ $('Start').item.json.id_conta }}/contacts/{{ $('Start').item.json.id_contato }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "chatwootApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"custom_attributes\": {\n    \"asaas_id_cliente\": \"{{ $('Asaas: Criar Cliente').item.json.id }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "Chatwoot: Atualizar ID Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        400
+      ],
+      "credentials": {
+        "chatwootApi": {}
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "asaas_id_cliente",
+              "value": "={{ $('Asaas: Criar Cliente').item.json.id }}"
+            }
+          ]
+        }
+      },
+      "name": "Set: ID Cliente (Novo)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "mergeByPosition"
+      },
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "asaas_id_cliente",
+              "value": "={{ $json.asaas_id_cliente }}"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": true
+        }
+      },
+      "name": "Set: Resultado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1340,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Asaas: Buscar Cliente por Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asaas: Buscar Cliente por Documento": {
+      "main": [
+        [
+          {
+            "node": "IF: Cliente Encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Cliente Encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Set: ID Cliente (Existente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Asaas: Criar Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: ID Cliente (Existente)": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asaas: Criar Cliente": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Atualizar ID Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Atualizar ID Cliente": {
+      "main": [
+        [
+          {
+            "node": "Set: ID Cliente (Novo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: ID Cliente (Novo)": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Set: Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

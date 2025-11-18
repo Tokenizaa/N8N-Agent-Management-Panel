@@ -1,0 +1,575 @@
+
+{
+  "name": "[AGENTE] Lógica de Follow-up com CRM",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "follow-up-trigger",
+        "options": {}
+      },
+      "name": "Webhook: Iniciar Follow-up",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "webhookId": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
+      "notes": "Este webhook é chamado pelo workflow principal do agente para iniciar a sequência de follow-up para um lead específico.\\n\\nDeve receber um JSON com o ID do lead, ex:\\n`{\"leadId\": \"5521999999999\"}`"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM follow_up_cadences ORDER BY id ASC;"
+      },
+      "name": "DB: Carregar Todas as Regras de Follow-up",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      },
+      "notes": "Busca as regras do banco de dados Supabase.\\n\\nPara o Supabase, vá em Project Settings > Database > Connection string e use os detalhes do 'URI'."
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Loop: Para Cada Regra",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "notes": "Itera sobre cada regra de follow-up (5m, 10m, 1h, etc.) de forma sequencial."
+    },
+    {
+      "parameters": {
+        "jsCode": "const regra = $json.regra; // Ex: \"5m\", \"1h\", \"3d\"\\nconst value = parseInt(regra);\\nconst unit = regra.slice(-1).toLowerCase();\\n\\nlet seconds = 0;\\n\\nswitch (unit) {\\n  case 's':\\n    seconds = value;\\n    break;\\n  case 'm':\\n    seconds = value * 60;\\n    break;\\n  case 'h':\\n    seconds = value * 60 * 60;\\n    break;\\n  case 'd':\\n    seconds = value * 60 * 60 * 24;\\n    break;\\n  default:\\n    // Padrão para minutos se a unidade for inválida\\n    seconds = value * 60;\\n    break;\\n}\\n\\nreturn { seconds };\\n"
+      },
+      "name": "Código: Converter Regra para Segundos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "delay": "={{$json.seconds}}",
+        "unit": "seconds"
+      },
+      "name": "Wait (Aguardar Conforme a Regra)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts/search",
+        "authentication": "headerAuth",
+        "options": {},
+        "queryParameters": {
+          "q": "={{$node[\"Webhook: Iniciar Follow-up\"].json.body.leadId}}"
+        }
+      },
+      "name": "Chatwoot: Buscar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      },
+      "notes": "Busca o contato no Chatwoot usando o ID (telefone).\\n\\n**Variáveis de Ambiente Necessárias:**\\n- `CHATWOOT_URL` (ex: https://app.chatwoot.com)\\n- `CHATWOOT_ACCOUNT_ID`\\n\\n**Credenciais Necessárias:**\\n- Crie credenciais 'Header Auth' com:\\n  - Name: `api_access_token`\\n  - Value: [Seu token da API do Chatwoot]"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts/{{$node[\"Chatwoot: Buscar Contato\"].json.payload[0].id}}/labels",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Chatwoot: Obter Labels (Status)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        140
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      },
+      "notes": "Pega as labels do contato, que representam seu status no funil (ex: 'Descoberta', 'Qualificado')."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.payload}}",
+              "operation": "contains",
+              "value2": "={{$node[\"Loop: Para Cada Regra\"].json.status}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "IF: O Status do Lead é o Mesmo da Regra?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        300
+      ],
+      "notes": "Compara o status atual do lead no CRM com o status que esta regra de follow-up exige. Se for o mesmo, envia a mensagem. Se mudou, não faz nada."
+    },
+    {
+      "parameters": {},
+      "name": "NOTIFY ADMIN",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        540
+      ],
+      "notes": "!!! NÓ DE ALERTA !!!\\n\\nOcorreu um erro no fluxo de Follow-up.\\n\\nLeadID: {{$node[\"Webhook: Iniciar Follow-up\"].json.body.leadId}}\\n\\nErro: {{$last.execution.error.message}}\\n\\nConecte este nó a um serviço de notificação (Email, Slack, etc.)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const rule = $items(\"Loop: Para Cada Regra\")[0].json;\\nconst messages = [];\\n\\nif (rule.mensagem1) {\\n  messages.push({ text: rule.mensagem1 });\\n}\\nif (rule.mensagem2) {\\n  messages.push({ text: rule.mensagem2 });\\n}\\nif (rule.mensagem3) {\\n  messages.push({ text: rule.mensagem3 });\\n}\\n\\nreturn messages;"
+      },
+      "name": "Código: Preparar Mensagens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2640,
+        200
+      ],
+      "notes": "Cria uma lista de mensagens (1, 2 e 3) que não estão vazias, para serem enviadas em sequência."
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Loop: Para Cada Mensagem",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/message/sendText",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$node[\"Webhook: Iniciar Follow-up\"].json.body.leadId}}"
+            },
+            {
+              "name": "textMessage",
+              "value": {
+                "__rl": true,
+                "value": "={{$json.text}}",
+                "mode": "json"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Baileys: Enviar Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        3040,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      },
+      "notes": "Envia a mensagem de follow-up via API Baileys.\\n\\n**Variáveis de Ambiente Necessárias:**\\n- `BAILEYS_API_URL`\\n\\n**Credenciais Necessárias:**\\n- Crie credenciais 'Header Auth' com:\\n  - Name: `apikey`\\n  - Value: `{{$env.BAILEYS_API_KEY}}`"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $item(0).$execution.splitInBatches.batchIndex }}",
+              "operation": "smaller",
+              "value2": "={{$item(0).$execution.splitInBatches.totalBatches - 1}}"
+            }
+          ]
+        }
+      },
+      "name": "IF: Não é a Última Mensagem?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3460,
+        200
+      ],
+      "notes": "Adiciona uma pausa entre as mensagens, mas não após a última."
+    },
+    {
+      "parameters": {
+        "delay": 10,
+        "unit": "seconds"
+      },
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/contacts/{{$node[\"Chatwoot: Buscar Contato\"].json.payload[0].id}}/conversations",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Chatwoot: Listar Conversas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const conversations = $json.payload;\\n// Pega a conversa mais recente\\nconst latestConversation = conversations.sort((a, b) => b.id - a.id)[0];\\n\\n$self.json.conversation = latestConversation;\\nreturn latestConversation;"
+      },
+      "name": "Código: Obter Última Conversa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.CHATWOOT_URL}}/api/v1/accounts/{{$env.CHATWOOT_ACCOUNT_ID}}/conversations/{{$node[\"Código: Obter Última Conversa\"].json.id}}/messages",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$node[\"Loop: Para Cada Mensagem\"].json.text}}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Chatwoot: Registrar Mensagem de Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        3240,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CHATWOOT_CREDENTIALS_ID",
+          "name": "Chatwoot API credentials"
+        }
+      },
+      "notes": "Registra a mensagem de follow-up enviada no histórico do Chatwoot."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"Código: Obter Última Conversa\"].json.status}}",
+              "value2": "open"
+            }
+          ]
+        }
+      },
+      "name": "IF: Conversa está Aberta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        460
+      ],
+      "notes": "Verifica se a conversa no Chatwoot ainda está 'aberta'. Se um humano a resolveu, o follow-up é interrompido."
+    }
+  ],
+  "connections": {
+    "Webhook: Iniciar Follow-up": {
+      "main": [
+        [
+          {
+            "node": "DB: Carregar Todas as Regras de Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Carregar Todas as Regras de Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Loop: Para Cada Regra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "NOTIFY ADMIN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop: Para Cada Regra": {
+      "main": [
+        [
+          {
+            "node": "Código: Converter Regra para Segundos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Converter Regra para Segundos": {
+      "main": [
+        [
+          {
+            "node": "Wait (Aguardar Conforme a Regra)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (Aguardar Conforme a Regra)": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Buscar Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Buscar Contato": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Listar Conversas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "NOTIFY ADMIN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Obter Labels (Status)": {
+      "main": [
+        [
+          {
+            "node": "IF: O Status do Lead é o Mesmo da Regra?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "NOTIFY ADMIN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: O Status do Lead é o Mesmo da Regra?": {
+      "main": [
+        [
+          {
+            "node": "Código: Preparar Mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Preparar Mensagens": {
+      "main": [
+        [
+          {
+            "node": "Loop: Para Cada Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop: Para Cada Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Baileys: Enviar Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Não é a Última Mensagem?": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Listar Conversas": {
+      "main": [
+        [
+          {
+            "node": "Código: Obter Última Conversa",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Chatwoot: Obter Labels (Status)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Código: Obter Última Conversa": {
+      "main": [
+        [
+          {
+            "node": "IF: Conversa está Aberta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chatwoot: Registrar Mensagem de Follow-up": {
+      "main": [
+        [
+          {
+            "node": "IF: Não é a Última Mensagem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Enviar Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Chatwoot: Registrar Mensagem de Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "NOTIFY ADMIN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Conversa está Aberta?": {
+      "main": [
+        [
+          {
+            "node": "IF: O Status do Lead é o Mesmo da Regra?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

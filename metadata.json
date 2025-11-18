@@ -1,0 +1,5 @@
+{
+  "name": "N8N Agent Management Panel",
+  "description": "An intuitive and centralized web dashboard to manage and monitor multiple N8N-based Artificial Intelligence agents. It allows dynamic configuration of prompts, status, follow-up cadences, and performance monitoring without directly editing N8N workflows.",
+  "requestFramePermissions": []
+}

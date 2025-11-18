@@ -1,0 +1,982 @@
+
+{
+  "name": "[PAINEL] Ações da Interface",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "update-panel-data",
+        "options": {}
+      },
+      "name": "Webhook (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "webhookId": "f1e2d3c4-b5a6-f7e8-d9c0-b1a2c3d4e5f6"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "update_agents"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "update_settings"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "update_followup"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "generate_qr"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "reset_memory"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "check_status"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "toggle_flow_status"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "update_gemini_key"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "clear_logs"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "disconnect_instance"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "check_on_whatsapp"
+            },
+            {
+              "value1": "={{$json.body.action}}",
+              "value2": "reset_memory_for_lead"
+            }
+          ]
+        }
+      },
+      "name": "Switch Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE agent_config \\nSET \\n  \"waitTime\" = COALESCE({{$json.body.data.waitTime ?? 'NULL'}}, \"waitTime\"),\\n  \"notificationTrigger\" = COALESCE('{{$json.body.data.notificationTrigger}}', \"notificationTrigger\"),\\n  \"notificationNumbers\" = COALESCE('{{$json.body.data.notificationNumbers}}', \"notificationNumbers\"),\\n  \"debug_mode\" = COALESCE({{$json.body.data.debug_mode ?? 'NULL'}}, \"debug_mode\")\\nWHERE id = 1;"
+      },
+      "name": "DB: Update Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        40
+      ],
+      "notes": "Atualiza as configurações na tabela 'agent_config'. Conecte às suas credenciais do Supabase/Postgres.",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "TRUNCATE TABLE follow_up_cadences RESTART IDENTITY;"
+      },
+      "name": "DB: Clear Follow-ups",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        200
+      ],
+      "notes": "Limpa a tabela antes de inserir os novos dados. Conecte às suas credenciais do Supabase/Postgres.",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Loop Over Cadences",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO follow_up_cadences (regra, status, mensagem1, mensagem2, mensagem3) VALUES ('{{$json.regra}}', '{{$json.status}}', '{{$json.mensagem1}}', '{{$json.mensagem2}}', '{{$json.mensagem3}}');"
+      },
+      "name": "DB: Insert Row",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/instance/connect",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Baileys: Generate QR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        920,
+        360
+      ],
+      "notes": "Inicia uma sessão na API Baileys para gerar um QR Code.\\n\\n**Variáveis de Ambiente Necessárias:**\\n- `BAILEYS_API_URL`\\n\\n**Credenciais Necessárias:**\\n- Crie credenciais 'Header Auth' com:\\n  - Name: `apikey`\\n  - Value: [Sua API Key do Baileys]",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "TRUNCATE TABLE conversation_history RESTART IDENTITY;"
+      },
+      "name": "DB: Reset Memory",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        520
+      ],
+      "notes": "Limpa a tabela de histórico de conversas para resetar a memória do agente. Conecte às suas credenciais do Supabase/Postgres.",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "data": "={{$json}}",
+        "options": {}
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseCode": 500,
+        "data": "{\\n  \"status\": \"error\",\\n  \"message\": \"A ação falhou.\",\\n   \"error\": \"{{$last.execution.error.message}}\"\\n}",
+        "options": {}
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/instance/status",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Baileys: Check Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        920,
+        680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return { connected: $json.data?.status === 'CONNECTED' }"
+      },
+      "name": "Format Status Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { qrCodeBase64: $json.data?.qrcode.base64 }"
+      },
+      "name": "Format QR Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE agent_config SET is_active = {{$json.body.data.is_active}} WHERE id = 1;"
+      },
+      "name": "DB: Toggle Agent Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        840
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const { updated, deleted } = $json.body.data;\\n\\n// Pass along deleted IDs first\\nif (deleted && deleted.length > 0) {\\n  $self.json.deleted = deleted;\\n}\\n\\n// Return updated agents to the next node\\nreturn updated.map(item => ({ json: item }));"
+      },
+      "name": "Prepare Agent Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM agents WHERE id = ANY(ARRAY[{{$node[\"Prepare Agent Data\"].json.deleted.join(',')}}]);"
+      },
+      "name": "DB: Delete Agents",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$node[\"Prepare Agent Data\"].json.deleted.length}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "IF: Agents to Delete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO agents (id, name, description, prompt, is_default, is_active, available_tools, sort_order)\\nVALUES ({{$json.id}}, '{{$json.name.replace(/'/g, \"''\")}}', '{{$json.description.replace(/'/g, \"''\")}}', '{{$json.prompt.replace(/'/g, \"''\")}}', {{$json.is_default}}, {{$json.is_active}}, '{{JSON.stringify($json.available_tools || [])}}'::jsonb, {{$json.sort_order}})\\nON CONFLICT (id) DO UPDATE\\nSET name = EXCLUDED.name,\\n    description = EXCLUDED.description,\\n    prompt = EXCLUDED.prompt,\\n    is_default = EXCLUDED.is_default,\\n    is_active = EXCLUDED.is_active,\\n    available_tools = EXCLUDED.available_tools,\\n    sort_order = EXCLUDED.sort_order;"
+      },
+      "name": "DB: Upsert Agent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        -120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO agents (name, description, prompt, is_default, is_active, available_tools, sort_order)\\nVALUES ('{{$json.name.replace(/'/g, \"''\")}}', '{{$json.description.replace(/'/g, \"''\")}}', '{{$json.prompt.replace(/'/g, \"''\")}}', {{$json.is_default}}, {{$json.is_active}}, '{{JSON.stringify($json.available_tools || [])}}'::jsonb, {{$json.sort_order}});"
+      },
+      "name": "DB: Create New Agent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        -0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.id}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "IF: Is New Agent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE agent_config SET gemini_api_key = '{{$json.body.data.apiKey}}' WHERE id = 1;"
+      },
+      "name": "DB: Update Gemini Key",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        1000
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "TRUNCATE TABLE agent_logs;"
+      },
+      "name": "DB: Clear Logs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        1160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BAILEYS_API_URL}}/instance/logout",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "name": "Baileys: Disconnect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        920,
+        1320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BAILEYS_API_URL}}/chat/on-whatsapp",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json.body.data.number}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Baileys: Check on WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        920,
+        1480
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json.data; \\nconst onWhatsApp = result?.exists === true;\\nconst number = $node[\"Webhook (POST)\"].json.body.data.number;\\n\\nreturn { onWhatsApp, number };"
+      },
+      "name": "Format WhatsApp Check Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        1480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM conversation_history WHERE lead_id = '{{$json.body.data.leadId}}';"
+      },
+      "name": "DB: Reset Memory for Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        920,
+        1640
+      ],
+      "notes": "Limpa o histórico de conversas para um lead específico. Conecte às suas credenciais do Supabase/Postgres.",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (POST)": {
+      "main": [
+        [
+          {
+            "node": "Switch Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Action": {
+      "main": [
+        [
+          {
+            "node": "Prepare Agent Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Update Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Clear Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Baileys: Generate QR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Reset Memory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Baileys: Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Toggle Agent Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Update Gemini Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Clear Logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Baileys: Disconnect",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Baileys: Check on WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Reset Memory for Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Update Settings": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Clear Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Cadences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Cadences": {
+      "main": [
+        [
+          {
+            "node": "DB: Insert Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Insert Row": {
+      "main": [],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Generate QR": {
+      "main": [
+        [
+          {
+            "node": "Format QR Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Reset Memory": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Check Status": {
+      "main": [
+        [
+          {
+            "node": "Format Status Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Status Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format QR Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Toggle Agent Status": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Agent Data": {
+      "main": [
+        [
+          {
+            "node": "IF: Agents to Delete?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF: Is New Agent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Delete Agents": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Agents to Delete?": {
+      "main": [
+        [
+          {
+            "node": "DB: Delete Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Upsert Agent": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Create New Agent": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Is New Agent?": {
+      "main": [
+        [
+          {
+            "node": "DB: Upsert Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Create New Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Update Gemini Key": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Clear Logs": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Disconnect": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Check on WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Format WhatsApp Check Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format WhatsApp Check Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Reset Memory for Lead": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,357 @@
+
+{
+  "name": "[PAINEL] Carregar Dados da Interface",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "load-panel-data",
+        "options": {}
+      },
+      "name": "Webhook (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "webhookId": "b1a2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT waitTime, notificationTrigger, notificationNumbers, is_active, gemini_api_key, debug_mode FROM agent_config LIMIT 1;"
+      },
+      "name": "DB: Get Agent Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        680,
+        -140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      },
+      "notes": "Conecte às suas credenciais do Supabase/Postgres.\\n\\nPara o Supabase, vá em Project Settings > Database > Connection string e use os detalhes do 'URI'."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM follow_up_cadences ORDER BY id ASC;"
+      },
+      "name": "DB: Get Follow-ups",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        680,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      },
+      "notes": "Conecte às suas credenciais do Supabase/Postgres.\\n\\nPara o Supabase, vá em Project Settings > Database > Connection string e use os detalhes do 'URI'."
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $items('DB: Get Agent Config')[0].json; \nconst agentsRaw = $items('DB: Get Agents').map(item => item.json);\nconst followUps = $items('DB: Get Follow-ups').map(item => item.json);\nconst statusJson = $items('Baileys: Check Status')[0].json;\nconst logs = $items('DB: Get Logs').map(item => item.json);\n\n// Pega os dados do dashboard do nó correto (IF ou seu fallback)\nconst dashboardNode = $items('IF: Range = this_month').length > 0 ? $items('DB: Get Dashboard Data (This Month)') : $items('DB: Get Dashboard Data (Default)');\nconst dashboard = dashboardNode[0].json;\n\nconst agents = agentsRaw.map(agent => ({\n    ...agent,\n    available_tools: agent.available_tools || []\n}));\n\n// Formata os dados para o frontend\nconst formattedData = {\n  agentConfig: {\n    waitTime: config.waitTime,\n    notificationTrigger: config.notificationTrigger,\n    notificationNumbers: config.notificationNumbers,\n    is_active: config.is_active,\n    debug_mode: config.debug_mode,\n    geminiApiKey: config.gemini_api_key\n  },\n  agents: agents,\n  followUpCadences: followUps,\n  logs: logs,\n  dashboardData: {\n      kpis: {\n          totalLeads: Number(dashboard.total_leads) || 0,\n          totalCompras: Number(dashboard.total_compras) || 0,\n          totalFaturado: Number(dashboard.total_faturado) || 0,\n          ticketMedio: Number(dashboard.ticket_medio) || 0,\n          taxaConversao: Number(dashboard.taxa_conversao) || 0\n      },\n      leadsPorDia: [\n          { name: 'Seg', leads: 4 },\n          { name: 'Ter', leads: 3 },\n          { name: 'Qua', leads: 2 },\n          { name: 'Qui', leads: 2 },\n          { name: 'Sex', leads: 1 },\n          { name: 'Sáb', leads: 2 },\n          { name: 'Dom', leads: 3 },\n      ] // Mockado, mas poderia vir do DB\n  },\n  isWhatsAppConnected: statusJson.data?.status === 'CONNECTED'\n};\n\nreturn formattedData;"
+      },
+      "name": "Format Data for FE",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$node[\"Webhook (GET)\"].json.query.range}}",
+              "value2": "this_month"
+            }
+          ]
+        }
+      },
+      "name": "IF: Range = this_month",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \\n    COUNT(*) AS total_leads,\\n    SUM(CASE WHEN status = 'comprou' THEN 1 ELSE 0 END) AS total_compras,\\n    SUM(CASE WHEN status = 'comprou' THEN valor ELSE 0 END) AS total_faturado,\\n    AVG(CASE WHEN status = 'comprou' THEN valor ELSE NULL END) AS ticket_medio,\\n    (SUM(CASE WHEN status = 'comprou' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0)) AS taxa_conversao\\nFROM \\n    leads\\nWHERE\\n    date_trunc('month', created_at) = date_trunc('month', NOW());"
+      },
+      "name": "DB: Get Dashboard Data (This Month)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        440
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \\n    COUNT(*) AS total_leads,\\n    SUM(CASE WHEN status = 'comprou' THEN 1 ELSE 0 END) AS total_compras,\\n    SUM(CASE WHEN status = 'comprou' THEN valor ELSE 0 END) AS total_faturado,\\n    AVG(CASE WHEN status = 'comprou' THEN valor ELSE NULL END) AS ticket_medio,\\n    (SUM(CASE WHEN status = 'comprou' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0)) AS taxa_conversao\\nFROM \\n    leads\\nWHERE\\n    created_at >= NOW() - INTERVAL '{{$node[\"Webhook (GET)\"].json.query.range === '30d' ? '30' : '7'}} days';"
+      },
+      "name": "DB: Get Dashboard Data (Default)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BAILEYS_API_URL}}/instance/status",
+        "authentication": "headerAuth",
+        "options": {
+          "ignoreSslIssues": true
+        }
+      },
+      "name": "Baileys: Check Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        -300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_BAILEYS_API_KEY_ID",
+          "name": "Baileys API Key"
+        }
+      },
+      "notes": "Verifica o status da conexão da instância Baileys.\\n\\n**Variáveis de Ambiente Necessárias:**\\n- `BAILEYS_API_URL`\\n\\n**Credenciais Necessárias:**\\n- Crie credenciais 'Header Auth' com:\\n  - Name: `apikey`\\n  - Value: [Sua API Key do Baileys]"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, description, prompt, is_default, is_active, available_tools, sort_order FROM agents ORDER BY sort_order ASC, id ASC;"
+      },
+      "name": "DB: Get Agents",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        680,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, timestamp, agent_name, level, message, details FROM agent_logs ORDER BY timestamp DESC LIMIT 200;"
+      },
+      "name": "DB: Get Logs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        680,
+        360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_DB_CREDENTIALS_ID",
+          "name": "Postgres credentials"
+        }
+      },
+      "notes": "Conecte às suas credenciais do Supabase/Postgres.\\n\\nPara o Supabase, vá em Project Settings > Database > Connection string e use os detalhes do 'URI'."
+    }
+  ],
+  "connections": {
+    "Webhook (GET)": {
+      "main": [
+        [
+          {
+            "node": "DB: Get Agent Config",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DB: Get Follow-ups",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF: Range = this_month",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Baileys: Check Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DB: Get Agents",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DB: Get Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Get Agent Config": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Get Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Range = this_month": {
+      "main": [
+        [
+          {
+            "node": "DB: Get Dashboard Data (This Month)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB: Get Dashboard Data (Default)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Get Dashboard Data (This Month)": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Get Dashboard Data (Default)": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data for FE": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baileys: Check Status": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Get Agents": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB: Get Logs": {
+      "main": [
+        [
+          {
+            "node": "Format Data for FE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
